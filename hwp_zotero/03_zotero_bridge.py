@@ -129,9 +129,16 @@ def handle_Document_insertField(hwp, doc_id, args):
     # Zotero가 이 응답으로 필드 객체를 바로 만들어 쓰는데, code/text가 없으면
     # (undefined) 나중에 그 값에 .trim() 같은 걸 호출하다 에러가 난다
     # (실제로 참고문헌 필드 생성 직후 이 문제로 크래시가 났었다).
-    # 아직 값이 없으니 빈 문자열로 미리 채워둔다.
+    #
+    # 빈 문자열("")로 채우면 또 다른 함정이 있다: Zotero 세션은
+    # ignoreEmptyBibliography가 항상 켜져 있어서, 방금 만든 참고문헌 필드의
+    # 텍스트(저희가 답한 값을 그대로 기억함, 다시 물어보지 않음)가 비어있으면
+    # 실제 내용을 채우기도 전에 "빈 필드니까 지우자"며 없애버린다
+    # (Field.removeCode). 그래서 빈 문자열 대신 "비어있지 않은" 자리표시
+    # 텍스트를 준다 — 실제로 한글 문서에 보이는 건 아니고, Zotero가 내부적으로
+    # "이 필드는 비어있지 않다"고 착각하게 만들 뿐이다.
     _field_codes[field_id] = ""
-    _field_texts[field_id] = ""
+    _field_texts[field_id] = "{Bibliography}"
     try:
         hwp.create_field(field_id, "", "")
     except AttributeError:
@@ -140,7 +147,7 @@ def handle_Document_insertField(hwp, doc_id, args):
     # Zotero 클라이언트 소스(httpIntegrationClient.js)를 직접 확인한 결과,
     # 필드참조 객체는 "fieldID"가 아니라 "id" 키를 읽고, code/text/noteIndex도
     # 함께 기대한다.
-    return {"id": field_id, "code": "", "text": "", "noteIndex": None}
+    return {"id": field_id, "code": "", "text": "{Bibliography}", "noteIndex": None}
 
 
 def _resolve_field_id(args) -> str | None:
