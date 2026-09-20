@@ -174,8 +174,9 @@ def handle_Field_getText(hwp, doc_id, args):
 
 
 def handle_Field_getNoteIndex(hwp, doc_id, args):
-    # 각주/미주 인용은 아직 지원하지 않으므로 항상 0(본문).
-    return 0
+    # 각주/미주 인용은 아직 지원하지 않는다. 0은 "0번째 각주"로 해석될 수
+    # 있어서, "각주 아님"을 뜻하도록 null로 바꿔본다.
+    return None
 
 
 def handle_Document_getFields(hwp, doc_id, args):
@@ -200,7 +201,7 @@ def handle_Document_getFields(hwp, doc_id, args):
     # 하는 것 같다. (addEditCitation 쪽은 여기서 시도했을 때 멈췄었지만, 그건
     # 그 거래 자체가 비어있는 목록을 기대해서였을 뿐일 수 있다.)
     return [
-        [fid, _field_codes.get(fid, ""), _field_texts.get(fid, ""), 0]
+        [fid, _field_codes.get(fid, ""), _field_texts.get(fid, ""), None]
         for fid in ready
     ]
 
