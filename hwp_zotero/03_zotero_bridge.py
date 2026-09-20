@@ -163,9 +163,13 @@ def handle_Field_getNoteIndex(hwp, doc_id, args):
 
 
 def handle_Document_getFields(hwp, doc_id, args):
-    # 이번 세션에서 삽입한 순서대로 field_id 목록을 돌려준다.
+    # 이번 세션에서 삽입한 순서대로, 각 필드의 [ID, 코드, 텍스트, 각주번호]를
+    # 함께 묶어서 돌려준다 (LibreOffice 연동 방식과 같은 "일괄 조회" 형태로 추정).
     log.info("Document_getFields: 추적 중인 필드 %d개", len(_field_order))
-    return list(_field_order)
+    return [
+        [fid, _field_codes.get(fid, ""), _field_texts.get(fid, ""), 0]
+        for fid in _field_order
+    ]
 
 
 def handle_Document_insertText(hwp, doc_id, args):
