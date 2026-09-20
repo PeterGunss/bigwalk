@@ -51,6 +51,9 @@ log = logging.getLogger("zotero_bridge")
 # field_id -> 숨겨진 인용 코드(CSL_CITATION 등). Stage 4b에서 파일로 영구 저장할 예정.
 _field_codes: dict[str, str] = {}
 _document_data: str = ""
+# Field.* 명령은 필드참조 자리에 null을 보내고 "방금 다룬 그 필드"를 뜻하는
+# 경우가 많아서, 가장 최근에 만든/다룬 필드 ID를 기억해둔다.
+_current_field_id: str | None = None
 
 
 def get_hwp():
@@ -84,9 +87,10 @@ def handle_Document_getDocumentData(hwp, doc_id, args):
 
 
 def handle_Document_setDocumentData(hwp, doc_id, args):
+    # args: [docId, dataStr]
     global _document_data
-    if args:
-        _document_data = args[0]
+    if len(args) > 1:
+        _document_data = args[1]
     return None
 
 
@@ -105,22 +109,33 @@ def handle_Document_cursorInField(hwp, doc_id, args):
 
 
 def handle_Document_insertField(hwp, doc_id, args):
+    # args: [docId, fieldType, noteType]
+    global _current_field_id
     field_id = f"ZOTERO_{uuid.uuid4().hex[:8]}"
+    _current_field_id = field_id
     log.info("새 필드 생성(임시, 실제 누름틀 아님): %s", field_id)
     return {"fieldID": field_id}
 
 
+def _resolve_field_id(args) -> str | None:
+    # Field.* 명령: args[1]이 필드참조. null이면 "방금 다룬 필드"로 간주한다.
+    field_ref = args[1] if len(args) > 1 else None
+    return field_ref or _current_field_id
+
+
 def handle_Field_setText(hwp, doc_id, args):
-    field_id = args[0] if len(args) > 0 else None
-    text = args[1] if len(args) > 1 else ""
+    # args: [docId, fieldRef(null 가능), text, isRich]
+    field_id = _resolve_field_id(args)
+    text = args[2] if len(args) > 2 else ""
     log.info("Field_setText: field_id=%s text=%r", field_id, text)
     hwp.insert_text(text)
     return None
 
 
 def handle_Field_setCode(hwp, doc_id, args):
-    field_id = args[0] if len(args) > 0 else None
-    code = args[1] if len(args) > 1 else ""
+    # args: [docId, fieldRef(null 가능), code]
+    field_id = _resolve_field_id(args)
+    code = args[2] if len(args) > 2 else ""
     if field_id:
         _field_codes[field_id] = code
     log.info("Field_setCode: field_id=%s code 길이=%d", field_id, len(code or ""))
@@ -134,7 +149,8 @@ def handle_Document_getFields(hwp, doc_id, args):
 
 
 def handle_Document_insertText(hwp, doc_id, args):
-    text = args[0] if args else ""
+    # args: [docId, text]
+    text = args[1] if len(args) > 1 else (args[0] if args else "")
     hwp.insert_text(text)
     return None
 
@@ -144,7 +160,8 @@ def handle_Document_complete(hwp, doc_id, args):
 
 
 def handle_Document_displayAlert(hwp, doc_id, args):
-    message = args[0] if args else ""
+    # args: [docId, text, icon, buttons] (다른 Document.* 명령과 같은 패턴으로 추정)
+    message = args[1] if len(args) > 1 else (args[0] if args else "")
     log.info("Zotero 알림: %s", message)
     try:
         import ctypes
