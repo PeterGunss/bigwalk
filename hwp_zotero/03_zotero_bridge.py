@@ -118,7 +118,11 @@ def handle_Document_insertField(hwp, doc_id, args):
     field_id = f"ZOTERO_{uuid.uuid4().hex[:8]}"
     _current_field_id = field_id
     _field_order.append(field_id)
-    log.info("새 필드 생성(임시, 실제 누름틀 아님): %s", field_id)
+    try:
+        hwp.create_field(field_id, "", "")
+    except AttributeError:
+        hwp.CreateField(field_id, "", "")
+    log.info("새 누름틀(진짜 필드) 생성: %s", field_id)
     return {"fieldID": field_id}
 
 
@@ -135,7 +139,10 @@ def handle_Field_setText(hwp, doc_id, args):
     if field_id:
         _field_texts[field_id] = text
     log.info("Field_setText: field_id=%s text=%r", field_id, text)
-    hwp.insert_text(text)
+    try:
+        hwp.put_field_text(field_id, text)
+    except AttributeError:
+        hwp.PutFieldText(field_id, text)
     return None
 
 
