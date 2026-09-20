@@ -171,7 +171,9 @@ def _html_bibliography_to_plain_text(raw_html: str) -> str:
         plain = html.unescape(plain).strip()
         if plain:
             lines.append(plain)
-    return "\n".join(lines)
+    # 한글(HWP) 필드 텍스트는 "\n" 단독으로는 줄바꿈(문단 구분)이 되지 않고
+    # "\r\n"으로 넣어야 각 항목이 별도 줄로 분리된다.
+    return "\r\n".join(lines)
 
 
 def handle_Field_setText(hwp, doc_id, args):
