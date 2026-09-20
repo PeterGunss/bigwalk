@@ -99,6 +99,13 @@ def handle_Document_setDocumentData(hwp, doc_id, args):
 
 
 def handle_Document_activate(hwp, doc_id, args):
+    # 지금까지 아무것도 안 했는데, 참고문헌 거래에서는 이 단계 바로 다음에
+    # 항상 실패한다. 한글 창을 실제로 활성화(포커스)해보는 시도.
+    # 메서드가 없거나 실패해도 전체 흐름은 계속 진행되게 안전하게 감싼다.
+    try:
+        hwp.XHwpWindows.Item(0).Activate()
+    except Exception as e:
+        log.debug("창 활성화 시도 실패(무시하고 계속 진행): %s", e)
     return None
 
 
