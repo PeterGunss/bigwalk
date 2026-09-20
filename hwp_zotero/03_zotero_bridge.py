@@ -272,6 +272,13 @@ def run_transaction(session, requests_module, initial_command: str) -> None:
         log.info("Zotero 요청: %s args=%r", command, args)
 
         result = dispatch(hwp, doc_id, command, args)
+
+        if command == "Document.complete":
+            # 이 명령 이후에는 Zotero가 더 이상 응답하지 않는 것으로 보여서
+            # (응답을 보내면 요청이 그냥 멈춘다), 여기서 바로 거래를 끝낸다.
+            log.info("=== 트랜잭션 종료 (Document.complete) ===")
+            break
+
         log.debug(">> POST respond: %s", result)
         # Zotero의 검색/선택 창에서 사용자가 고르는 동안 이 응답이 한참
         # (몇 분까지) 지연될 수 있으므로 넉넉하게 잡는다.
