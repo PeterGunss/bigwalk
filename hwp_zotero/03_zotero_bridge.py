@@ -182,6 +182,35 @@ def handle_Field_getCode(hwp, doc_id, args):
     return _field_codes.get(field_id, "")
 
 
+def handle_Field_removeCode(hwp, doc_id, args):
+    # 이 필드를 더 이상 Zotero 인용/참고문헌으로 취급하지 않겠다는 뜻으로
+    # 보인다 (예: 방금 만든 빈 참고문헌 컨테이너를 취소할 때). 코드만 비우고
+    # 텍스트/필드 자체는 남겨둔다.
+    field_id = _resolve_field_id(args)
+    if field_id:
+        _field_codes[field_id] = ""
+    log.info("Field_removeCode: field_id=%s", field_id)
+    return None
+
+
+def handle_Field_delete(hwp, doc_id, args):
+    # 필드 추적에서 완전히 제거한다. (아직 한글 문서에서 실제 누름틀 자체를
+    # 지우는 처리는 하지 않는다 - 문제가 되면 다음 단계에서 다룬다.)
+    field_id = _resolve_field_id(args)
+    if field_id in _field_order:
+        _field_order.remove(field_id)
+    _field_codes.pop(field_id, None)
+    _field_texts.pop(field_id, None)
+    log.info("Field_delete: field_id=%s", field_id)
+    return None
+
+
+def handle_Field_select(hwp, doc_id, args):
+    # UI에서 필드를 선택 표시하는 용도로 보이며, 지금 단계에서는 별도 동작이
+    # 필요하지 않다.
+    return None
+
+
 def handle_Field_getText(hwp, doc_id, args):
     field_id = _resolve_field_id(args)
     return _field_texts.get(field_id, "")
@@ -261,6 +290,9 @@ HANDLERS = {
     "Field.getCode": handle_Field_getCode,
     "Field.getText": handle_Field_getText,
     "Field.getNoteIndex": handle_Field_getNoteIndex,
+    "Field.removeCode": handle_Field_removeCode,
+    "Field.delete": handle_Field_delete,
+    "Field.select": handle_Field_select,
     "Document.getFields": handle_Document_getFields,
     "Document.insertText": handle_Document_insertText,
     "Document.complete": handle_Document_complete,
