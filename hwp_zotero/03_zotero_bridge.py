@@ -473,7 +473,26 @@ def handle_Field_getNoteIndex(hwp, doc_id, args):
     return None
 
 
+def _prune_deleted_fields(hwp) -> None:
+    # 사용자가 한글에서 직접 필드를 지워버리면(예: 참고문헌을 통째로 지우고
+    # 다시 만들려는 경우) 우리 추적 목록에는 그대로 남아있게 된다. 그 상태로
+    # Document.getFields에 죽은 필드를 계속 돌려주면, Zotero가 "이미 있는
+    # 필드"라 믿고 그 필드를 재사용하려 드는데, put_field_text는 존재하지
+    # 않는 필드에 대해 조용히 아무 것도 안 하기 때문에 - 트랜잭션은 정상
+    # 종료되지만 화면에는 아무 변화도 없는 것처럼 보이는 문제가 있었다.
+    existing = _existing_hwp_field_names(hwp)
+    if existing is None:
+        return  # 목록을 못 가져왔으면 기존 추적 상태를 그대로 믿는다
+    for fid in list(_field_order):
+        if fid not in existing:
+            log.info("문서에서 지워진 필드라 추적 목록에서도 제거함: %s", fid)
+            _field_order.remove(fid)
+            _field_codes.pop(fid, None)
+            _field_texts.pop(fid, None)
+
+
 def handle_Document_getFields(hwp, doc_id, args):
+    _prune_deleted_fields(hwp)
     # addEditCitation 거래 중에는 비어있는 목록으로도 이미 잘 동작하는 것이
     # 확인됐으므로, 굳이 바꾸지 않고 그대로 둔다. 참고문헌을 만들 때만 실제
     # 목록을 준다.
