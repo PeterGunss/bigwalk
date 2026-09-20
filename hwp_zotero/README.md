@@ -121,5 +121,42 @@ Stage 1도 성공적으로 확인되었습니다.
 **"관리자 권한으로 실행"** 한 뒤 다시 시도해주세요. (전역 단축키 후킹에 권한이
 필요한 경우가 있습니다.)
 
-`[성공]` 또는 `[실패]` 메시지와 함께 나오는 내용을 그대로 알려주시면 다음 단계로
-넘어가겠습니다.
+Stage 2도 성공적으로 확인되었습니다. (성공 알림 소리는 나중에 손볼 예정이며, 기능에는
+영향이 없습니다.)
+
+## Stage 3 — .exe 패키징 (Python 없이 실행)
+
+PyInstaller로 `02_hotkey_listener.py`를 `.exe` 파일 하나로 묶습니다. 이 단계는
+지금 사용 중인 컴퓨터에서 "빌드"만 하고, 나온 `.exe` 파일을 다른 컴퓨터(한글이
+설치된 Windows)로 옮기면 Python 설치 없이 그대로 실행할 수 있습니다.
+
+1. PyInstaller 설치 (한 번만):
+
+   ```
+   pip install pyinstaller
+   ```
+
+2. 빌드:
+
+   ```
+   pyinstaller --onefile --name HwpZoteroInserter --hidden-import win32timezone 02_hotkey_listener.py
+   ```
+
+3. 빌드가 끝나면 `dist` 폴더 안에 `HwpZoteroInserter.exe`가 생성됩니다.
+
+   ```
+   cd dist
+   dir
+   ```
+
+4. 그 `.exe`를 더블클릭(또는 터미널에서 `.\HwpZoteroInserter.exe`)으로 실행해서,
+   Stage 2에서 한 것과 똑같이 한글 문서 + Zotero 인용 복사 + `Ctrl+Alt+Z` 테스트를
+   다시 해봅니다.
+
+**참고:** `pywin32`(한글 자동화에 쓰이는 패키지) 때문에 빌드 중이나 실행 중에
+`win32timezone` 관련 에러가 날 수 있어서 미리 `--hidden-import`로 넣어뒀습니다.
+그래도 에러가 나면 에러 메시지 전체를 그대로 알려주세요 — 흔한 문제라 대부분
+`--hidden-import` 옵션을 하나 더 추가하는 것으로 해결됩니다.
+
+`dist\HwpZoteroInserter.exe` 실행 결과(성공/실패, 에러 메시지)를 알려주시면
+다음 단계(Zotero 실시간 연동)로 넘어가겠습니다.
