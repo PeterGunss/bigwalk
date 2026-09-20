@@ -318,13 +318,31 @@ def main() -> None:
     log.info("Zotero 다리 스크립트 시작. Ctrl+Alt+C: 인용 삽입, Ctrl+Alt+B: 참고문헌")
     print("Ctrl+Alt+C 를 누르면 Zotero 인용 삽입 창이 열립니다.")
     print("Ctrl+Alt+B 를 누르면 Zotero 참고문헌 삽입 창이 열립니다.")
-    print("  (Document_getFields가 아직 빈 목록만 돌려주므로, 참고문헌은 아직")
-    print("   제대로 만들어지지 않을 수 있습니다 - 로그 확인용으로 먼저 테스트해보세요.)")
+    print("  (이 스크립트를 끄지 않고 계속 켜둔 상태에서 삽입한 인용만 기억합니다.)")
     print("자세한 기록은 zotero_debug.log 파일에서 확인할 수 있습니다.")
     print("종료하려면 이 창에서 Ctrl+C.")
 
-    keyboard.add_hotkey("ctrl+alt+c", lambda: trigger(requests, "addEditCitation"))
-    keyboard.add_hotkey("ctrl+alt+b", lambda: trigger(requests, "addEditBibliography"))
+    import threading
+
+    busy_lock = threading.Lock()
+
+    def start_trigger(command: str) -> None:
+        # keyboard 라이브러리의 내부 처리 스레드를 오래 붙잡고 있으면 이후 단축키
+        # 입력을 놓치는 현상이 있어서, 실제 작업은 별도 스레드에서 실행한다.
+        if not busy_lock.acquire(blocking=False):
+            log.warning("이미 다른 작업이 진행 중이라 이번 단축키 입력은 무시합니다.")
+            return
+
+        def run():
+            try:
+                trigger(requests, command)
+            finally:
+                busy_lock.release()
+
+        threading.Thread(target=run, daemon=True).start()
+
+    keyboard.add_hotkey("ctrl+alt+c", lambda: start_trigger("addEditCitation"))
+    keyboard.add_hotkey("ctrl+alt+b", lambda: start_trigger("addEditBibliography"))
 
     try:
         keyboard.wait()
