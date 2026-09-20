@@ -174,10 +174,10 @@ def handle_Document_getFields(hwp, doc_id, args):
         len(_field_order),
         len(ready),
     )
-    return [
-        [fid, _field_codes.get(fid, ""), _field_texts.get(fid, ""), 0]
-        for fid in ready
-    ]
+    # [id, code, text, noteIndex]로 한 번에 묶어 보내는 방식은 멈추는 현상이
+    # 있었다. Field.getCode/getText/getNoteIndex를 이미 구현해뒀으니, 대신
+    # 필드 ID만 돌려주고 Zotero가 필요할 때 개별 조회하게 해본다.
+    return list(ready)
 
 
 def handle_Document_insertText(hwp, doc_id, args):
