@@ -163,12 +163,20 @@ def handle_Field_getNoteIndex(hwp, doc_id, args):
 
 
 def handle_Document_getFields(hwp, doc_id, args):
-    # 이번 세션에서 삽입한 순서대로, 각 필드의 [ID, 코드, 텍스트, 각주번호]를
-    # 함께 묶어서 돌려준다 (LibreOffice 연동 방식과 같은 "일괄 조회" 형태로 추정).
-    log.info("Document_getFields: 추적 중인 필드 %d개", len(_field_order))
+    # "TEMP"는 Zotero가 지금 만들고 있는 중인(아직 완성 안 된) 필드에 붙이는
+    # 임시 코드다. 그런 필드까지 목록에 섞어 돌려주면 Zotero가 혼란스러워하며
+    # 멈추는 것으로 보여서, 이미 완성된(진짜 코드가 들어온) 필드만 돌려준다.
+    ready = [
+        fid for fid in _field_order if _field_codes.get(fid) not in (None, "", "TEMP")
+    ]
+    log.info(
+        "Document_getFields: 추적 중 %d개 중 완료된 필드 %d개",
+        len(_field_order),
+        len(ready),
+    )
     return [
         [fid, _field_codes.get(fid, ""), _field_texts.get(fid, ""), 0]
-        for fid in _field_order
+        for fid in ready
     ]
 
 
