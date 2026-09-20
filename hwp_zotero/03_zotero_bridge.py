@@ -125,14 +125,21 @@ def handle_Document_insertField(hwp, doc_id, args):
     field_id = f"ZOTERO_{uuid.uuid4().hex[:8]}"
     _current_field_id = field_id
     _field_order.append(field_id)
+    # Zotero가 이 응답으로 필드 객체를 바로 만들어 쓰는데, code/text가 없으면
+    # (undefined) 나중에 그 값에 .trim() 같은 걸 호출하다 에러가 난다
+    # (실제로 참고문헌 필드 생성 직후 이 문제로 크래시가 났었다).
+    # 아직 값이 없으니 빈 문자열로 미리 채워둔다.
+    _field_codes[field_id] = ""
+    _field_texts[field_id] = ""
     try:
         hwp.create_field(field_id, "", "")
     except AttributeError:
         hwp.CreateField(field_id, "", "")
     log.info("새 누름틀(진짜 필드) 생성: %s", field_id)
     # Zotero 클라이언트 소스(httpIntegrationClient.js)를 직접 확인한 결과,
-    # 필드참조 객체는 "fieldID"가 아니라 "id" 키를 읽는다.
-    return {"id": field_id}
+    # 필드참조 객체는 "fieldID"가 아니라 "id" 키를 읽고, code/text/noteIndex도
+    # 함께 기대한다.
+    return {"id": field_id, "code": "", "text": "", "noteIndex": None}
 
 
 def _resolve_field_id(args) -> str | None:
