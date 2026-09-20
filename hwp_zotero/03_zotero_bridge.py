@@ -33,6 +33,10 @@ ZOTERO_BASE_URL = "http://127.0.0.1:23119/connector/document"
 EXEC_URL = f"{ZOTERO_BASE_URL}/execCommand"
 RESPOND_URL = f"{ZOTERO_BASE_URL}/respond"
 
+EXEC_TIMEOUT = 30
+# 사용자가 Zotero의 검색/선택 창에서 시간을 들여 고를 수 있으므로 길게 잡는다.
+RESPOND_TIMEOUT = 600
+
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -187,7 +191,7 @@ def run_transaction(session, requests_module, initial_command: str) -> None:
 
     body = {"command": initial_command, "docId": doc_id}
     log.debug(">> POST execCommand: %s", body)
-    resp = session.post(EXEC_URL, json=body, timeout=30)
+    resp = session.post(EXEC_URL, json=body, timeout=EXEC_TIMEOUT)
 
     while True:
         log.debug("<< status=%s body=%s", resp.status_code, resp.text[:2000])
@@ -216,7 +220,9 @@ def run_transaction(session, requests_module, initial_command: str) -> None:
 
         result = dispatch(hwp, doc_id, command, args)
         log.debug(">> POST respond: %s", result)
-        resp = session.post(RESPOND_URL, json=result, timeout=30)
+        # Zotero의 검색/선택 창에서 사용자가 고르는 동안 이 응답이 한참
+        # (몇 분까지) 지연될 수 있으므로 넉넉하게 잡는다.
+        resp = session.post(RESPOND_URL, json=result, timeout=RESPOND_TIMEOUT)
 
 
 def trigger(requests_module, command: str) -> None:
@@ -225,6 +231,12 @@ def trigger(requests_module, command: str) -> None:
     session = requests.Session()
     try:
         run_transaction(session, requests_module, command)
+    except requests_module.exceptions.Timeout:
+        log.error(
+            "Zotero 응답 대기 시간이 초과됐습니다. Zotero 쪽에 열려 있는 인용/참고문헌 "
+            "창이 있다면 완료하거나 취소해주세요. 계속 이 에러가 나면 Zotero를 "
+            "재시작한 뒤 다시 시도해주세요."
+        )
     except requests_module.exceptions.ConnectionError:
         log.error(
             "Zotero(포트 23119)에 연결할 수 없습니다. Zotero가 실행 중인지 확인해주세요."
