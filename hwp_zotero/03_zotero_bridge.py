@@ -7,12 +7,17 @@ Zotero는 로컬 23119 포트에서 HTTP 서버를 띄워두고 있다. 우리�
 "이 텍스트를 필드에 넣어줘" 같은 세부 명령들을 우리에게 순서대로 요청한다.
 우리는 그 요청을 받아 실제로 한글을 조작하고, 결과를 다시 Zotero에게 돌려준다.
 
-이 첫 버전(Stage 4a)의 목표는 "본문에 인용 삽입"만 되게 하는 것이다.
-아직 하지 않는 것(다음 단계에서 추가):
-- 이미 삽입된 인용을 다시 클릭해서 수정하는 기능
-- 참고문헌(Bibliography) 자동 생성/갱신
-- 문서를 닫고 다시 열어도 인용 정보가 유지되는 것 (지금은 이 스크립트를 실행하는
-  동안에만 메모리에 저장됨)
+이 버전(Stage 4b)이 하는 일:
+- 본문에 인용 삽입/참고문헌 자동 생성
+- 문서를 저장해둔 상태라면, 문서 옆에 생기는 "<파일명>.zotero-fields.json"에
+  인용 정보를 저장해뒀다가 스크립트를 껐다 켜거나 문서를 닫았다 열어도 이어서 씀
+- 커서를 기존 인용 위 왼쪽 끝에 두고 Ctrl+Alt+C를 누르면 새로 추가가 아니라
+  그 인용을 수정하는 모드로 들어감
+- 참고문헌의 이탤릭체(저널명 등)와 들여쓰기/줄간격/항목간격 서식을 실제로 적용
+
+아직 하지 않는 것:
+- 문서를 저장하지 않은 상태("제목없음")에서는 인용 정보를 영구 저장할 방법이
+  없어서, 저장 전까지는 스크립트를 껐다 켜면 정보가 사라짐
 
 사용법:
 1. 이 스크립트를 실행해둔다: python 03_zotero_bridge.py
@@ -26,6 +31,7 @@ Zotero는 로컬 23119 포트에서 HTTP 서버를 띄워두고 있다. 우리�
 import html
 import json
 import logging
+import os
 import platform
 import re
 import sys
@@ -49,8 +55,9 @@ logging.basicConfig(
 )
 log = logging.getLogger("zotero_bridge")
 
-# 이번 세션(스크립트를 실행해둔 동안) 동안에만 유지되는 임시 저장소.
-# 스크립트를 껐다 켜거나 문서를 닫았다 열면 사라진다 (다음 단계에서 파일로 영구 저장 예정).
+# 현재 문서에 대한 인용 상태. run_transaction이 매 거래 시작 시 _load_state()로
+# 디스크에서 채우고, 끝날 때 _save_state()로 다시 저장한다 (문서를 저장해둔
+# 경우에만 - 자세한 내용은 _state_file_path 참고).
 _field_codes: dict[str, str] = {}  # field_id -> 숨겨진 인용 코드(CSL_CITATION 등)
 _field_texts: dict[str, str] = {}  # field_id -> 화면에 보이는 텍스트
 _field_order: list[str] = []  # 문서에 삽입된 순서대로의 field_id 목록
@@ -60,6 +67,105 @@ _document_data: str = ""
 _current_field_id: str | None = None
 # 지금 진행 중인 거래의 최상위 명령(addEditCitation/addEditBibliography 등).
 _current_transaction_command: str | None = None
+# 위 _field_* 전역 변수들이 지금 어느 문서(doc_id) 것인지. 다른 문서로 바뀌면
+# _load_state()가 이 값을 보고 다시 읽어들인다.
+_loaded_doc_id: str | None = None
+# Document.setBibliographyStyle로 받아둔, 아직 적용 안 한 참고문헌 문단 서식.
+_pending_bib_style: dict | None = None
+
+
+def _state_file_path(doc_id: str) -> str | None:
+    # doc_id는 저장된 한글 파일의 전체 경로이거나("C:\...\논문.hwp"), 아직 저장
+    # 안 한 문서면 항상 같은 문자열("hwp-untitled-document")이다. 후자는 스크립트를
+    # 재시작했을 때 "이전의 그 문서"인지 알아낼 방법이 없으므로 영구 저장을
+    # 포기한다. (사용자가 먼저 한글에서 파일 저장을 하면 이 문제가 없어진다.)
+    if not doc_id or doc_id == "hwp-untitled-document":
+        return None
+    return doc_id + ".zotero-fields.json"
+
+
+def _reset_state() -> None:
+    global _document_data
+    _field_codes.clear()
+    _field_texts.clear()
+    _field_order.clear()
+    _document_data = ""
+
+
+def _existing_hwp_field_names(hwp) -> set[str] | None:
+    # 지금 한글 문서에 실제로 남아있는 누름틀 이름 목록. 저장된 상태와 대조해서
+    # 사용자가 한글에서 직접 지워버린 필드를 걸러내는 데 쓴다. 실패하면 None을
+    # 돌려주고, 호출하는 쪽에서는 "대조 생략"으로 처리한다.
+    try:
+        try:
+            raw = hwp.get_field_list(number=0, option=2)  # 0=이름 그대로, 2=누름틀만
+        except AttributeError:
+            raw = hwp.GetFieldList(Number=0, option=2)
+        if not raw:
+            return set()
+        return {name for name in raw.split("\x02") if name}
+    except Exception:
+        log.exception("문서의 실제 필드 목록을 가져오지 못해 대조를 생략합니다.")
+        return None
+
+
+def _load_state(hwp, doc_id: str) -> None:
+    global _loaded_doc_id, _document_data
+    if doc_id == _loaded_doc_id:
+        return  # 이미 이 문서 상태가 메모리에 로드돼 있음
+    _reset_state()
+    _loaded_doc_id = doc_id
+    path = _state_file_path(doc_id)
+    if not path or not os.path.exists(path):
+        log.info("저장된 인용 상태 없음 (새 문서이거나 아직 저장 안 한 문서): doc_id=%s", doc_id)
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+    except Exception:
+        log.exception("저장된 인용 상태 파일을 읽지 못함: %s", path)
+        return
+
+    existing_names = _existing_hwp_field_names(hwp)
+    _document_data = saved.get("document_data", "")
+    skipped = 0
+    for entry in saved.get("fields", []):
+        fid = entry.get("id")
+        if not fid:
+            continue
+        if existing_names is not None and fid not in existing_names:
+            skipped += 1
+            continue
+        _field_order.append(fid)
+        _field_codes[fid] = entry.get("code", "")
+        _field_texts[fid] = entry.get("text", "")
+    log.info(
+        "저장된 인용 상태 불러옴: %s (필드 %d개 복원, %d개는 문서에 없어져서 건너뜀)",
+        path, len(_field_order), skipped,
+    )
+
+
+def _save_state(doc_id: str) -> None:
+    path = _state_file_path(doc_id)
+    if not path:
+        return
+    data = {
+        "document_data": _document_data,
+        "fields": [
+            {
+                "id": fid,
+                "code": _field_codes.get(fid, ""),
+                "text": _field_texts.get(fid, ""),
+            }
+            for fid in _field_order
+        ],
+    }
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        log.info("인용 상태 저장함: %s (필드 %d개)", path, len(_field_order))
+    except Exception:
+        log.exception("인용 상태 저장 실패: %s", path)
 
 
 def get_hwp():
@@ -116,9 +222,34 @@ def handle_Document_canInsertField(hwp, doc_id, args):
 
 
 def handle_Document_cursorInField(hwp, doc_id, args):
-    # Stage 4a에서는 항상 "필드 안에 없음"으로 처리한다.
-    # (기존 인용 수정 기능은 아직 지원하지 않음)
-    return None
+    # 커서가 우리가 만든 Zotero 누름틀 안에 있으면 그 필드를 돌려주고, 그러면
+    # addEditCitation이 "새로 추가"가 아니라 "이 인용 수정"으로 동작한다.
+    # (한글 API 특성상, 필드의 맨 왼쪽에 커서가 붙어 있을 때만 감지된다 - 필드
+    # 오른쪽 끝이나 필드를 벗어난 위치면 감지되지 않는다.)
+    global _current_field_id
+    try:
+        try:
+            name = hwp.get_cur_field_name(option=2)  # 2 = 누름틀만
+        except AttributeError:
+            name = hwp.GetCurFieldName(option=2)
+    except Exception:
+        log.exception("Document_cursorInField: 현재 필드 이름 조회 실패")
+        return None
+    if not name:
+        return None
+    name = name.split("{{")[0]  # "이름{{0}}" 형태로 올 수 있어서 정리
+    if not _field_codes.get(name):
+        # 우리가 추적하지 않는 필드(다른 용도의 누름틀이거나, 아직 코드가 없는
+        # 만들다 만 필드)라면 "Zotero 필드 아님"으로 처리한다.
+        return None
+    _current_field_id = name
+    log.info("Document_cursorInField: 커서가 기존 인용 필드 안에 있음: %s", name)
+    return {
+        "id": name,
+        "code": _field_codes.get(name, ""),
+        "text": _field_texts.get(name, ""),
+        "noteIndex": None,
+    }
 
 
 def handle_Document_insertField(hwp, doc_id, args):
@@ -157,32 +288,117 @@ def _resolve_field_id(args) -> str | None:
     return field_ref or _current_field_id
 
 
-def _html_bibliography_to_plain_text(raw_html: str) -> str:
+def _strip_tags(fragment: str) -> str:
+    return html.unescape(re.sub(r"<[^>]+>", "", fragment))
+
+
+def _html_bibliography_entries(raw_html: str) -> list[list[tuple[str, bool]]]:
     # 참고문헌은 <div class="csl-bib-body"><div class="csl-entry">...</div>...</div>
-    # 형태의 HTML로 온다. 각 항목을 한 줄씩으로 뽑아내고, 나머지 태그(<i> 등
-    # 서식 태그 포함)는 일단 전부 제거한다. 이탤릭체 같은 실제 서식 적용은
-    # 다음 단계 과제로 남겨둔다.
-    entries = re.findall(r'<div class="csl-entry">(.*?)</div>', raw_html, re.DOTALL)
-    if not entries:
-        entries = [raw_html]
-    lines = []
-    for entry in entries:
-        plain = re.sub(r"<[^>]+>", "", entry)
-        plain = html.unescape(plain).strip()
-        if plain:
-            lines.append(plain)
-    # 한글(HWP) 필드 텍스트는 "\n" 단독으로는 줄바꿈(문단 구분)이 되지 않고
-    # "\r\n"으로 넣어야 각 항목이 별도 줄로 분리된다.
-    return "\r\n".join(lines)
+    # 형태의 HTML로 온다. 항목마다 (텍스트, 이탤릭여부) 조각의 리스트로 쪼갠다 -
+    # 이렇게 하면 태그를 지운 순수 텍스트를 만드는 동시에, <i>...</i> 구간의
+    # 글자 위치(오프셋)도 그대로 알 수 있어서 나중에 실제 이탤릭 서식을 그
+    # 위치에 입힐 수 있다.
+    entries_html = re.findall(r'<div class="csl-entry">(.*?)</div>', raw_html, re.DOTALL)
+    if not entries_html:
+        entries_html = [raw_html]
+    entries: list[list[tuple[str, bool]]] = []
+    for entry_html in entries_html:
+        segments: list[tuple[str, bool]] = []
+        pos = 0
+        for m in re.finditer(r"<i>(.*?)</i>", entry_html, re.DOTALL):
+            before = _strip_tags(entry_html[pos:m.start()])
+            if before:
+                segments.append((before, False))
+            italic_text = _strip_tags(m.group(1))
+            if italic_text:
+                segments.append((italic_text, True))
+            pos = m.end()
+        tail = _strip_tags(entry_html[pos:])
+        if tail:
+            segments.append((tail, False))
+        if segments:
+            # 항목의 맨 앞/뒤 공백만 정리한다 (중간 조각들의 오프셋은 그대로 둬야
+            # 나중에 이탤릭 위치 계산이 어긋나지 않는다).
+            first_text, first_italic = segments[0]
+            segments[0] = (first_text.lstrip(), first_italic)
+            last_text, last_italic = segments[-1]
+            segments[-1] = (last_text.rstrip(), last_italic)
+            segments = [(t, i) for t, i in segments if t]
+        if segments:
+            entries.append(segments)
+    return entries
+
+
+def _apply_bibliography_italics(hwp, field_id: str, entries: list) -> None:
+    # 각 항목(문단)의 이탤릭 조각에 실제 이탤릭 서식을 입힌다. 문단 하나가
+    # 참고문헌 한 항목에 대응한다고 가정한다 (항목 사이는 "\r\n"으로 분리해서
+    # 넣었으므로 맞다).
+    try:
+        if not hwp.move_to_field(field_id, text=True, start=True, select=False):
+            log.warning("이탤릭 서식 적용 실패: 필드 시작으로 이동 못함 (%s)", field_id)
+            return
+        _, base_para, base_pos = hwp.get_pos()
+    except Exception:
+        log.exception("이탤릭 서식 적용 준비 중 에러 (field_id=%s)", field_id)
+        return
+
+    for i, segments in enumerate(entries):
+        para = base_para + i
+        offset = base_pos if i == 0 else 0
+        for text, is_italic in segments:
+            length = len(text)
+            if is_italic and text.strip():
+                try:
+                    hwp.select_text(para, offset, para, offset + length)
+                    hwp.set_font(Italic=True)
+                except Exception:
+                    log.exception(
+                        "이탤릭 적용 실패: entry=%d para=%d offset=%d text=%r",
+                        i, para, offset, text,
+                    )
+            offset += length
+
+    try:
+        hwp.move_to_field(field_id, text=True, start=True, select=False)
+    except Exception:
+        pass
+
+
+def _apply_bibliography_paragraph_style(hwp, field_id: str, entry_count: int) -> None:
+    # Document.setBibliographyStyle이 미리 넘겨준 들여쓰기/줄간격/항목간격을
+    # 실제로 참고문헌 필드의 문단들에 적용한다.
+    global _pending_bib_style
+    style = _pending_bib_style
+    _pending_bib_style = None
+    if not style or entry_count <= 0:
+        return
+    try:
+        hwp.move_to_field(field_id, text=True, start=True, select=False)
+        _, base_para, _ = hwp.get_pos()
+        hwp.select_text(base_para, 0, base_para + entry_count - 1, -1)
+        hwp.set_para(
+            Indentation=style["first_line_indent_pt"],
+            LeftMargin=style["indent_pt"],
+            LineSpacing=style["line_spacing_percent"],
+            NextSpacing=style["entry_spacing_pt"],
+        )
+        hwp.move_to_field(field_id, text=True, start=True, select=False)
+        log.info("참고문헌 문단 서식 적용함: %r", style)
+    except Exception:
+        log.exception("참고문헌 문단 서식 적용 실패 (field_id=%s)", field_id)
 
 
 def handle_Field_setText(hwp, doc_id, args):
     # args: [docId, fieldRef(null 가능), text, isRich]
     field_id = _resolve_field_id(args)
     raw_text = args[2] if len(args) > 2 else ""
+    bib_entries: list | None = None
     if "<div" in raw_text:
         # 참고문헌 필드: HTML 조각이 통째로 온다.
-        text = _html_bibliography_to_plain_text(raw_text)
+        bib_entries = _html_bibliography_entries(raw_text)
+        # 한글(HWP) 필드 텍스트는 "\n" 단독으로는 줄바꿈(문단 구분)이 되지 않고
+        # "\r\n"으로 넣어야 각 항목이 별도 줄로 분리된다.
+        text = "\r\n".join("".join(t for t, _ in seg) for seg in bib_entries)
     else:
         # 인용 필드: isRich=True일 때 "&#38;"처럼 HTML 엔티티로 인코딩된
         # 텍스트가 온다. 그대로 넣으면 화면에 "&#38;"라는 글자가 그대로
@@ -196,6 +412,9 @@ def handle_Field_setText(hwp, doc_id, args):
         hwp.put_field_text(field_id, text)
     except AttributeError:
         hwp.PutFieldText(field_id, text)
+    if bib_entries and field_id:
+        _apply_bibliography_italics(hwp, field_id, bib_entries)
+        _apply_bibliography_paragraph_style(hwp, field_id, len(bib_entries))
     return None
 
 
@@ -293,8 +512,30 @@ def handle_Document_insertText(hwp, doc_id, args):
 
 def handle_Document_setBibliographyStyle(hwp, doc_id, args):
     # args: [docId, firstLineIndent, indent, lineSpacing, entrySpacing, tabStops, tabStopCount]
-    # 참고문헌 문단 서식(들여쓰기/줄간격) 적용은 다음 단계 과제로 남겨둔다.
-    log.info("Document_setBibliographyStyle (아직 서식 적용은 안 함): args=%r", args)
+    # 전부 트위프(twip, 1/20 포인트) 단위로 온다 (Zotero의
+    # Cite.getBibliographyFormatParameters 기준: 예를 들어 내어쓰기 스타일이면
+    # indent=720(=0.5인치), firstLineIndent=-720. lineSpacing은 "240 * 배수"
+    # 형태라서 240=홑줄간격(100%)에 대응한다).
+    #
+    # 텍스트가 아직 필드에 들어가기 전에 이 명령이 먼저 오므로, 여기서는 값만
+    # 저장해두고 실제 적용은 뒤이어 오는 Field.setText 처리 후에 한다
+    # (_apply_bibliography_paragraph_style 참고).
+    global _pending_bib_style
+    try:
+        first_line_indent_twip = args[1] or 0
+        indent_twip = args[2] or 0
+        line_spacing_twip = args[3] or 0
+        entry_spacing_twip = args[4] or 0
+        _pending_bib_style = {
+            "first_line_indent_pt": first_line_indent_twip / 20,
+            "indent_pt": indent_twip / 20,
+            "line_spacing_percent": round(line_spacing_twip / 240 * 100) if line_spacing_twip else 100,
+            "entry_spacing_pt": entry_spacing_twip / 20,
+        }
+    except (IndexError, TypeError, ZeroDivisionError):
+        log.warning("Document_setBibliographyStyle: 인자가 예상과 다름 args=%r", args)
+        return None
+    log.info("Document_setBibliographyStyle: 저장함 %r (원본 args=%r)", _pending_bib_style, args)
     return None
 
 
@@ -357,49 +598,54 @@ def run_transaction(session, requests_module, initial_command: str) -> None:
     _current_transaction_command = initial_command
     hwp = get_hwp()
     doc_id = get_doc_id(hwp)
+    _load_state(hwp, doc_id)
     log.info("=== 트랜잭션 시작: %s (doc_id=%s) ===", initial_command, doc_id)
 
-    body = {"command": initial_command, "docId": doc_id}
-    log.debug(">> POST execCommand: %s", body)
-    resp = session.post(EXEC_URL, json=body, timeout=EXEC_TIMEOUT)
+    try:
+        body = {"command": initial_command, "docId": doc_id}
+        log.debug(">> POST execCommand: %s", body)
+        resp = session.post(EXEC_URL, json=body, timeout=EXEC_TIMEOUT)
 
-    while True:
-        log.debug("<< status=%s body=%s", resp.status_code, resp.text[:2000])
+        while True:
+            log.debug("<< status=%s body=%s", resp.status_code, resp.text[:2000])
 
-        if resp.status_code >= 400:
-            log.error("Zotero가 에러를 반환했습니다 (status=%s): %s", resp.status_code, resp.text)
-            break
+            if resp.status_code >= 400:
+                log.error("Zotero가 에러를 반환했습니다 (status=%s): %s", resp.status_code, resp.text)
+                break
 
-        if not resp.text.strip():
-            log.info("=== 트랜잭션 종료 (빈 응답) ===")
-            break
+            if not resp.text.strip():
+                log.info("=== 트랜잭션 종료 (빈 응답) ===")
+                break
 
-        try:
-            data = resp.json()
-        except ValueError:
-            log.info("=== 트랜잭션 종료 (JSON 아님, 최종 결과로 간주) ===")
-            break
+            try:
+                data = resp.json()
+            except ValueError:
+                log.info("=== 트랜잭션 종료 (JSON 아님, 최종 결과로 간주) ===")
+                break
 
-        if not isinstance(data, dict) or "command" not in data:
-            log.info("=== 트랜잭션 종료 (최종 결과: %r) ===", data)
-            break
+            if not isinstance(data, dict) or "command" not in data:
+                log.info("=== 트랜잭션 종료 (최종 결과: %r) ===", data)
+                break
 
-        command = data["command"]
-        args = data.get("arguments", [])
-        log.info("Zotero 요청: %s args=%r", command, args)
+            command = data["command"]
+            args = data.get("arguments", [])
+            log.info("Zotero 요청: %s args=%r", command, args)
 
-        result = dispatch(hwp, doc_id, command, args)
+            result = dispatch(hwp, doc_id, command, args)
 
-        if command == "Document.complete":
-            # 이 명령 이후에는 Zotero가 더 이상 응답하지 않는 것으로 보여서
-            # (응답을 보내면 요청이 그냥 멈춘다), 여기서 바로 거래를 끝낸다.
-            log.info("=== 트랜잭션 종료 (Document.complete) ===")
-            break
+            if command == "Document.complete":
+                # 이 명령 이후에는 Zotero가 더 이상 응답하지 않는 것으로 보여서
+                # (응답을 보내면 요청이 그냥 멈춘다), 여기서 바로 거래를 끝낸다.
+                log.info("=== 트랜잭션 종료 (Document.complete) ===")
+                break
 
-        log.debug(">> POST respond: %s", result)
-        # Zotero의 검색/선택 창에서 사용자가 고르는 동안 이 응답이 한참
-        # (몇 분까지) 지연될 수 있으므로 넉넉하게 잡는다.
-        resp = session.post(RESPOND_URL, json=result, timeout=RESPOND_TIMEOUT)
+            log.debug(">> POST respond: %s", result)
+            # Zotero의 검색/선택 창에서 사용자가 고르는 동안 이 응답이 한참
+            # (몇 분까지) 지연될 수 있으므로 넉넉하게 잡는다.
+            resp = session.post(RESPOND_URL, json=result, timeout=RESPOND_TIMEOUT)
+    finally:
+        # 어떻게 끝났든(성공/에러/타임아웃) 지금까지 쌓인 인용 상태는 저장해둔다.
+        _save_state(doc_id)
 
 
 def trigger(requests_module, command: str) -> None:
