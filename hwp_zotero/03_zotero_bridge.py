@@ -181,7 +181,14 @@ def handle_Document_getFields(hwp, doc_id, args):
         len(_field_order),
         len(ready),
     )
-    return [{"fieldID": fid} for fid in ready]
+    # Field.getCode를 따로 불러서 확인하지 않고 바로 오류가 났던 것으로 보아,
+    # 참고문헌을 만들 때는 각 필드의 코드/텍스트가 이 응답 안에 함께 들어있어야
+    # 하는 것 같다. (addEditCitation 쪽은 여기서 시도했을 때 멈췄었지만, 그건
+    # 그 거래 자체가 비어있는 목록을 기대해서였을 뿐일 수 있다.)
+    return [
+        [fid, _field_codes.get(fid, ""), _field_texts.get(fid, ""), 0]
+        for fid in ready
+    ]
 
 
 def handle_Document_insertText(hwp, doc_id, args):
