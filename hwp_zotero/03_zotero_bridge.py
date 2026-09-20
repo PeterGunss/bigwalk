@@ -23,6 +23,7 @@ Zotero는 로컬 23119 포트에서 HTTP 서버를 띄워두고 있다. 우리�
    이 파일 내용을 그대로 알려줄 것.
 """
 
+import html
 import json
 import logging
 import platform
@@ -151,7 +152,11 @@ def _resolve_field_id(args) -> str | None:
 def handle_Field_setText(hwp, doc_id, args):
     # args: [docId, fieldRef(null 가능), text, isRich]
     field_id = _resolve_field_id(args)
-    text = args[2] if len(args) > 2 else ""
+    raw_text = args[2] if len(args) > 2 else ""
+    # isRich=True일 때 Zotero는 "&#38;"처럼 HTML 엔티티로 인코딩된 텍스트를
+    # 보낸다. 그대로 넣으면 화면에 "&#38;"라는 글자가 그대로 보이고, 나중에
+    # Zotero가 "누가 수동으로 고쳤나?"라고 착각하는 원인이 된다.
+    text = html.unescape(raw_text)
     if field_id:
         _field_texts[field_id] = text
     log.info("Field_setText: field_id=%s text=%r", field_id, text)
