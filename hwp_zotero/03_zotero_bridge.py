@@ -47,9 +47,11 @@ logging.basicConfig(
 )
 log = logging.getLogger("zotero_bridge")
 
-# 이번 세션 동안에만 유지되는 임시 저장소.
-# field_id -> 숨겨진 인용 코드(CSL_CITATION 등). Stage 4b에서 파일로 영구 저장할 예정.
-_field_codes: dict[str, str] = {}
+# 이번 세션(스크립트를 실행해둔 동안) 동안에만 유지되는 임시 저장소.
+# 스크립트를 껐다 켜거나 문서를 닫았다 열면 사라진다 (다음 단계에서 파일로 영구 저장 예정).
+_field_codes: dict[str, str] = {}  # field_id -> 숨겨진 인용 코드(CSL_CITATION 등)
+_field_texts: dict[str, str] = {}  # field_id -> 화면에 보이는 텍스트
+_field_order: list[str] = []  # 문서에 삽입된 순서대로의 field_id 목록
 _document_data: str = ""
 # Field.* 명령은 필드참조 자리에 null을 보내고 "방금 다룬 그 필드"를 뜻하는
 # 경우가 많아서, 가장 최근에 만든/다룬 필드 ID를 기억해둔다.
@@ -113,6 +115,7 @@ def handle_Document_insertField(hwp, doc_id, args):
     global _current_field_id
     field_id = f"ZOTERO_{uuid.uuid4().hex[:8]}"
     _current_field_id = field_id
+    _field_order.append(field_id)
     log.info("새 필드 생성(임시, 실제 누름틀 아님): %s", field_id)
     return {"fieldID": field_id}
 
@@ -127,6 +130,8 @@ def handle_Field_setText(hwp, doc_id, args):
     # args: [docId, fieldRef(null 가능), text, isRich]
     field_id = _resolve_field_id(args)
     text = args[2] if len(args) > 2 else ""
+    if field_id:
+        _field_texts[field_id] = text
     log.info("Field_setText: field_id=%s text=%r", field_id, text)
     hwp.insert_text(text)
     return None
@@ -142,10 +147,25 @@ def handle_Field_setCode(hwp, doc_id, args):
     return None
 
 
+def handle_Field_getCode(hwp, doc_id, args):
+    field_id = _resolve_field_id(args)
+    return _field_codes.get(field_id, "")
+
+
+def handle_Field_getText(hwp, doc_id, args):
+    field_id = _resolve_field_id(args)
+    return _field_texts.get(field_id, "")
+
+
+def handle_Field_getNoteIndex(hwp, doc_id, args):
+    # 각주/미주 인용은 아직 지원하지 않으므로 항상 0(본문).
+    return 0
+
+
 def handle_Document_getFields(hwp, doc_id, args):
-    # Stage 4a에서는 필드를 영구 추적하지 않으므로 항상 빈 목록.
-    # (참고문헌 생성은 이 목록이 채워져야 제대로 동작하므로 Stage 4b에서 다룬다.)
-    return []
+    # 이번 세션에서 삽입한 순서대로 field_id 목록을 돌려준다.
+    log.info("Document_getFields: 추적 중인 필드 %d개", len(_field_order))
+    return list(_field_order)
 
 
 def handle_Document_insertText(hwp, doc_id, args):
@@ -183,6 +203,9 @@ HANDLERS = {
     "Document.insertField": handle_Document_insertField,
     "Field.setText": handle_Field_setText,
     "Field.setCode": handle_Field_setCode,
+    "Field.getCode": handle_Field_getCode,
+    "Field.getText": handle_Field_getText,
+    "Field.getNoteIndex": handle_Field_getNoteIndex,
     "Document.getFields": handle_Document_getFields,
     "Document.insertText": handle_Document_insertText,
     "Document.complete": handle_Document_complete,
