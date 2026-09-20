@@ -250,12 +250,16 @@ def main() -> None:
         print("[실패] keyboard 패키지가 없습니다. 'pip install -r requirements.txt'를 실행해주세요.")
         sys.exit(1)
 
-    log.info("Zotero 다리 스크립트 시작. Ctrl+Alt+C: 인용 삽입")
+    log.info("Zotero 다리 스크립트 시작. Ctrl+Alt+C: 인용 삽입, Ctrl+Alt+B: 참고문헌")
     print("Ctrl+Alt+C 를 누르면 Zotero 인용 삽입 창이 열립니다.")
+    print("Ctrl+Alt+B 를 누르면 Zotero 참고문헌 삽입 창이 열립니다.")
+    print("  (Document_getFields가 아직 빈 목록만 돌려주므로, 참고문헌은 아직")
+    print("   제대로 만들어지지 않을 수 있습니다 - 로그 확인용으로 먼저 테스트해보세요.)")
     print("자세한 기록은 zotero_debug.log 파일에서 확인할 수 있습니다.")
     print("종료하려면 이 창에서 Ctrl+C.")
 
     keyboard.add_hotkey("ctrl+alt+c", lambda: trigger(requests, "addEditCitation"))
+    keyboard.add_hotkey("ctrl+alt+b", lambda: trigger(requests, "addEditBibliography"))
 
     try:
         keyboard.wait()
