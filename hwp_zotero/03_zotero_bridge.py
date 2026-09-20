@@ -130,7 +130,9 @@ def handle_Document_insertField(hwp, doc_id, args):
     except AttributeError:
         hwp.CreateField(field_id, "", "")
     log.info("새 누름틀(진짜 필드) 생성: %s", field_id)
-    return {"fieldID": field_id}
+    # Zotero 클라이언트 소스(httpIntegrationClient.js)를 직접 확인한 결과,
+    # 필드참조 객체는 "fieldID"가 아니라 "id" 키를 읽는다.
+    return {"id": field_id}
 
 
 def _resolve_field_id(args) -> str | None:
@@ -180,10 +182,9 @@ def handle_Field_getNoteIndex(hwp, doc_id, args):
 
 
 def handle_Document_getFields(hwp, doc_id, args):
-    # addEditCitation 거래 중에는 목록에 뭘 넣어도(형태를 바꿔봐도) Zotero가
-    # 그대로 멈춰버리는 현상이 있었다. addEditCitation은 저자-연도 스타일에서는
-    # 기존 필드 목록이 굳이 없어도 동작했으므로, 그 거래 중에는 안전하게 빈
-    # 목록을 주고, 참고문헌을 만들 때만 실제 목록을 준다.
+    # addEditCitation 거래 중에는 비어있는 목록으로도 이미 잘 동작하는 것이
+    # 확인됐으므로, 굳이 바꾸지 않고 그대로 둔다. 참고문헌을 만들 때만 실제
+    # 목록을 준다.
     if _current_transaction_command == "addEditCitation":
         log.info("Document_getFields: addEditCitation 거래 중이므로 빈 목록 반환")
         return []
@@ -196,12 +197,16 @@ def handle_Document_getFields(hwp, doc_id, args):
         len(_field_order),
         len(ready),
     )
-    # Field.getCode를 따로 불러서 확인하지 않고 바로 오류가 났던 것으로 보아,
-    # 참고문헌을 만들 때는 각 필드의 코드/텍스트가 이 응답 안에 함께 들어있어야
-    # 하는 것 같다. (addEditCitation 쪽은 여기서 시도했을 때 멈췄었지만, 그건
-    # 그 거래 자체가 비어있는 목록을 기대해서였을 뿐일 수 있다.)
+    # Zotero 클라이언트 소스(httpIntegrationClient.js)를 확인한 결과, 배열이
+    # 아니라 {"id","code","text","noteIndex"} 키를 가진 객체 목록을 기대한다.
+    # (배열로 보내면 각 값이 전부 undefined로 읽혀서 내부적으로 에러가 났다.)
     return [
-        [fid, _field_codes.get(fid, ""), _field_texts.get(fid, ""), None]
+        {
+            "id": fid,
+            "code": _field_codes.get(fid, ""),
+            "text": _field_texts.get(fid, ""),
+            "noteIndex": None,
+        }
         for fid in ready
     ]
 
