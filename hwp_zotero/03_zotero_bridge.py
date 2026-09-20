@@ -56,6 +56,8 @@ _document_data: str = ""
 # Field.* 명령은 필드참조 자리에 null을 보내고 "방금 다룬 그 필드"를 뜻하는
 # 경우가 많아서, 가장 최근에 만든/다룬 필드 ID를 기억해둔다.
 _current_field_id: str | None = None
+# 지금 진행 중인 거래의 최상위 명령(addEditCitation/addEditBibliography 등).
+_current_transaction_command: str | None = None
 
 
 def get_hwp():
@@ -163,9 +165,14 @@ def handle_Field_getNoteIndex(hwp, doc_id, args):
 
 
 def handle_Document_getFields(hwp, doc_id, args):
-    # "TEMP"는 Zotero가 지금 만들고 있는 중인(아직 완성 안 된) 필드에 붙이는
-    # 임시 코드다. 그런 필드까지 목록에 섞어 돌려주면 Zotero가 혼란스러워하며
-    # 멈추는 것으로 보여서, 이미 완성된(진짜 코드가 들어온) 필드만 돌려준다.
+    # addEditCitation 거래 중에는 목록에 뭘 넣어도(형태를 바꿔봐도) Zotero가
+    # 그대로 멈춰버리는 현상이 있었다. addEditCitation은 저자-연도 스타일에서는
+    # 기존 필드 목록이 굳이 없어도 동작했으므로, 그 거래 중에는 안전하게 빈
+    # 목록을 주고, 참고문헌을 만들 때만 실제 목록을 준다.
+    if _current_transaction_command == "addEditCitation":
+        log.info("Document_getFields: addEditCitation 거래 중이므로 빈 목록 반환")
+        return []
+
     ready = [
         fid for fid in _field_order if _field_codes.get(fid) not in (None, "", "TEMP")
     ]
@@ -174,9 +181,6 @@ def handle_Document_getFields(hwp, doc_id, args):
         len(_field_order),
         len(ready),
     )
-    # 순수 문자열 목록도 멈췄다. Document.insertField가 필드 참조를
-    # {"fieldID": ...} 객체로 돌려줬으니, getFields도 같은 형태의 객체 목록을
-    # 기대하는 것일 수 있어 그렇게 바꿔본다.
     return [{"fieldID": fid} for fid in ready]
 
 
@@ -238,6 +242,8 @@ def dispatch(hwp, doc_id, command, args):
 
 
 def run_transaction(session, requests_module, initial_command: str) -> None:
+    global _current_transaction_command
+    _current_transaction_command = initial_command
     hwp = get_hwp()
     doc_id = get_doc_id(hwp)
     log.info("=== 트랜잭션 시작: %s (doc_id=%s) ===", initial_command, doc_id)
