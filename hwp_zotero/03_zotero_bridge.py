@@ -156,19 +156,20 @@ def handle_Document_displayAlert(hwp, doc_id, args):
 
 
 HANDLERS = {
-    "Application_getActiveDocument": handle_Application_getActiveDocument,
-    "Document_getDocumentData": handle_Document_getDocumentData,
-    "Document_setDocumentData": handle_Document_setDocumentData,
-    "Document_activate": handle_Document_activate,
-    "Document_canInsertField": handle_Document_canInsertField,
-    "Document_cursorInField": handle_Document_cursorInField,
-    "Document_insertField": handle_Document_insertField,
-    "Field_setText": handle_Field_setText,
-    "Field_setCode": handle_Field_setCode,
-    "Document_getFields": handle_Document_getFields,
-    "Document_insertText": handle_Document_insertText,
-    "Document_complete": handle_Document_complete,
-    "Document_displayAlert": handle_Document_displayAlert,
+    # 실제 트래픽 확인 결과 명령 이름은 밑줄(_)이 아니라 점(.)으로 구분된다.
+    "Application.getActiveDocument": handle_Application_getActiveDocument,
+    "Document.getDocumentData": handle_Document_getDocumentData,
+    "Document.setDocumentData": handle_Document_setDocumentData,
+    "Document.activate": handle_Document_activate,
+    "Document.canInsertField": handle_Document_canInsertField,
+    "Document.cursorInField": handle_Document_cursorInField,
+    "Document.insertField": handle_Document_insertField,
+    "Field.setText": handle_Field_setText,
+    "Field.setCode": handle_Field_setCode,
+    "Document.getFields": handle_Document_getFields,
+    "Document.insertText": handle_Document_insertText,
+    "Document.complete": handle_Document_complete,
+    "Document.displayAlert": handle_Document_displayAlert,
 }
 
 
