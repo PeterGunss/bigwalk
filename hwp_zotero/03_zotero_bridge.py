@@ -27,6 +27,7 @@ import html
 import json
 import logging
 import platform
+import re
 import sys
 import uuid
 
@@ -156,14 +157,36 @@ def _resolve_field_id(args) -> str | None:
     return field_ref or _current_field_id
 
 
+def _html_bibliography_to_plain_text(raw_html: str) -> str:
+    # 참고문헌은 <div class="csl-bib-body"><div class="csl-entry">...</div>...</div>
+    # 형태의 HTML로 온다. 각 항목을 한 줄씩으로 뽑아내고, 나머지 태그(<i> 등
+    # 서식 태그 포함)는 일단 전부 제거한다. 이탤릭체 같은 실제 서식 적용은
+    # 다음 단계 과제로 남겨둔다.
+    entries = re.findall(r'<div class="csl-entry">(.*?)</div>', raw_html, re.DOTALL)
+    if not entries:
+        entries = [raw_html]
+    lines = []
+    for entry in entries:
+        plain = re.sub(r"<[^>]+>", "", entry)
+        plain = html.unescape(plain).strip()
+        if plain:
+            lines.append(plain)
+    return "\n".join(lines)
+
+
 def handle_Field_setText(hwp, doc_id, args):
     # args: [docId, fieldRef(null 가능), text, isRich]
     field_id = _resolve_field_id(args)
     raw_text = args[2] if len(args) > 2 else ""
-    # isRich=True일 때 Zotero는 "&#38;"처럼 HTML 엔티티로 인코딩된 텍스트를
-    # 보낸다. 그대로 넣으면 화면에 "&#38;"라는 글자가 그대로 보이고, 나중에
-    # Zotero가 "누가 수동으로 고쳤나?"라고 착각하는 원인이 된다.
-    text = html.unescape(raw_text)
+    if "<div" in raw_text:
+        # 참고문헌 필드: HTML 조각이 통째로 온다.
+        text = _html_bibliography_to_plain_text(raw_text)
+    else:
+        # 인용 필드: isRich=True일 때 "&#38;"처럼 HTML 엔티티로 인코딩된
+        # 텍스트가 온다. 그대로 넣으면 화면에 "&#38;"라는 글자가 그대로
+        # 보이고, 나중에 Zotero가 "누가 수동으로 고쳤나?"라고 착각하는
+        # 원인이 된다.
+        text = html.unescape(raw_text)
     if field_id:
         _field_texts[field_id] = text
     log.info("Field_setText: field_id=%s text=%r", field_id, text)
@@ -266,6 +289,13 @@ def handle_Document_insertText(hwp, doc_id, args):
     return None
 
 
+def handle_Document_setBibliographyStyle(hwp, doc_id, args):
+    # args: [docId, firstLineIndent, indent, lineSpacing, entrySpacing, tabStops, tabStopCount]
+    # 참고문헌 문단 서식(들여쓰기/줄간격) 적용은 다음 단계 과제로 남겨둔다.
+    log.info("Document_setBibliographyStyle (아직 서식 적용은 안 함): args=%r", args)
+    return None
+
+
 def handle_Document_complete(hwp, doc_id, args):
     return None
 
@@ -302,6 +332,7 @@ HANDLERS = {
     "Field.select": handle_Field_select,
     "Document.getFields": handle_Document_getFields,
     "Document.insertText": handle_Document_insertText,
+    "Document.setBibliographyStyle": handle_Document_setBibliographyStyle,
     "Document.complete": handle_Document_complete,
     "Document.displayAlert": handle_Document_displayAlert,
 }
