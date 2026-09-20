@@ -710,7 +710,7 @@ def main() -> None:
     print("Ctrl+Alt+S 를 누르면 인용 스타일/언어 설정 창이 열립니다.")
     print("  (이 스크립트를 끄지 않고 계속 켜둔 상태에서 삽입한 인용만 기억합니다.)")
     print("자세한 기록은 zotero_debug.log 파일에서 확인할 수 있습니다.")
-    print("종료하려면 이 창에서 Ctrl+C.")
+    print("종료하려면 트레이 아이콘 메뉴의 '종료'를 누르거나, 이 창에서 Ctrl+C.")
 
     import threading
 
@@ -736,9 +736,43 @@ def main() -> None:
     keyboard.add_hotkey("ctrl+alt+s", lambda: start_trigger("setDocPrefs"))
 
     try:
-        keyboard.wait()
-    except KeyboardInterrupt:
-        print("종료합니다.")
+        import pystray
+        from PIL import Image, ImageDraw
+    except ImportError:
+        print("[안내] pystray/Pillow가 없어서 트레이 아이콘 없이 단축키만 사용합니다.")
+        print("       (아이콘 버튼도 쓰려면 'pip install -r requirements.txt' 후 다시 실행해주세요.)")
+        try:
+            keyboard.wait()
+        except KeyboardInterrupt:
+            print("종료합니다.")
+        return
+
+    def make_icon_image():
+        img = Image.new("RGB", (64, 64), "white")
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([2, 2, 61, 61], outline="black", width=3)
+        draw.text((22, 20), "Z", fill="black")
+        return img
+
+    def on_quit(icon, item):
+        icon.stop()
+
+    icon = pystray.Icon(
+        "zotero_hwp_bridge",
+        make_icon_image(),
+        "Zotero-한글 다리",
+        menu=pystray.Menu(
+            pystray.MenuItem("인용 삽입 (Ctrl+Alt+C)", lambda icon, item: start_trigger("addEditCitation")),
+            pystray.MenuItem("참고문헌 (Ctrl+Alt+B)", lambda icon, item: start_trigger("addEditBibliography")),
+            pystray.MenuItem("스타일/언어 설정 (Ctrl+Alt+S)", lambda icon, item: start_trigger("setDocPrefs")),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("종료", on_quit),
+        ),
+    )
+    print("작업표시줄 트레이 아이콘이 떴습니다. 아이콘을 클릭해서 메뉴로도 사용할 수 있습니다.")
+    log.info("트레이 아이콘 시작")
+    icon.run()
+    print("종료합니다.")
 
 
 if __name__ == "__main__":

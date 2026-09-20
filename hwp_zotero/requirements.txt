@@ -2,3 +2,5 @@ pyhwpx
 pyperclip
 keyboard
 requests
+pystray
+Pillow
