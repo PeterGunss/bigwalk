@@ -154,6 +154,20 @@ def _existing_hwp_field_names(hwp) -> set[str] | None:
             raw = hwp.get_field_list(number=0, option=0)  # 0=이름 그대로, 0=전체
         except AttributeError:
             raw = hwp.GetFieldList(Number=0, option=0)
+        # 진단용: 문서를 닫았다 다시 연 뒤 예전 필드가 사라진 것처럼 보이는
+        # 문제를 조사 중이라, option=0(전체) 결과와 option=2(누름틀만) 결과를
+        # 나란히 남겨서 실제로 한글이 뭘 돌려주는지 정확히 비교한다.
+        try:
+            try:
+                raw_clickhere = hwp.get_field_list(number=0, option=2)
+            except AttributeError:
+                raw_clickhere = hwp.GetFieldList(Number=0, option=2)
+        except Exception:
+            raw_clickhere = "(조회 실패)"
+        log.info(
+            "진단: get_field_list(option=0) 원본=%r / option=2(누름틀만) 원본=%r",
+            raw, raw_clickhere,
+        )
         if not raw:
             return set()
         return {name for name in raw.split("\x02") if name}
