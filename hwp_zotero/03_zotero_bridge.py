@@ -37,6 +37,7 @@ import platform
 import re
 import sys
 import tempfile
+import time
 import uuid
 
 ZOTERO_BASE_URL = "http://127.0.0.1:23119/connector/document"
@@ -240,6 +241,52 @@ def _save_state(doc_id: str) -> None:
         log.info("인용 상태 저장함: %s (필드 %d개)", path, len(_field_order))
     except Exception:
         log.exception("인용 상태 저장 실패: %s", path)
+
+
+def _hwp_is_running() -> bool:
+    # Hwp()를 그냥 만들면(pyhwpx 기본 동작), 지금 떠 있는 한글이 하나도 없을 때
+    # 새 빈 한글 창을 조용히 띄워버린다(게다가 아무도 그 창을 닫아주지 않아
+    # 계속 남는다). 아래 백그라운드 점검 스레드는 사용자 조작 없이도 주기적으로
+    # 도는 것이라 이 부작용을 반드시 피해야 하므로, COM Running Object Table을
+    # 직접 뒤져서 이미 떠 있는 한글이 있는지만 가볍게(새 인스턴스를 만들지
+    # 않고) 확인한다.
+    try:
+        import pythoncom
+    except ImportError:
+        return False
+    try:
+        context = pythoncom.CreateBindCtx(0)
+        running_coms = pythoncom.GetRunningObjectTable()
+        for moniker in running_coms.EnumRunning():
+            if moniker.GetDisplayName(context, moniker).startswith("!HwpObject."):
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def _flush_untitled_transition_if_needed() -> None:
+    # 버그 재현: "제목없음" 문서 상태로 인용을 넣고 참고문헌까지 만든 뒤, Zotero
+    # 쪽으로는 아무 명령도 더 보내지 않은 채로(=거래가 한 번도 더 일어나지
+    # 않은 채로) 한글에서 그냥 파일로 저장하고 프로그램들을 전부 종료하면,
+    # 메모리에만 있던 인용 상태(_field_order/_document_data 등)가 디스크에
+    # 한 번도 저장되지 못하고 통째로 사라졌다(사용자 보고로 확인됨). 원래
+    # "제목없음 -> 방금 저장돼서 실제 경로가 생김" 전환은 _load_state가 "다음
+    # 거래가 시작될 때" 되돌아보며 알아채는 구조라, 그 다음 거래가 영영 오지
+    # 않으면 전환 자체가 일어나지 않는 게 원인이었다. 그래서 거래를 기다리지
+    # 않고, 이 함수를 주기적으로(main()의 백그라운드 스레드) 불러서 "지금
+    # 한글 문서가 이미 실제 경로로 저장돼 있는데 우리가 아직 제목없음으로
+    # 알고 있는" 상태인지 직접 확인하고, 맞다면 즉시 저장해버린다.
+    if _loaded_doc_id != "hwp-untitled-document" or not _field_order:
+        return  # 저장할 내용이 없거나, 이미 실제 경로로 파악하고 있으면 할 일 없음
+    if not _hwp_is_running():
+        return
+    try:
+        hwp = get_hwp()
+        doc_id = get_doc_id(hwp)
+        _load_state(hwp, doc_id)  # doc_id가 실제 경로면 전환+저장까지 알아서 처리됨
+    except Exception:
+        log.exception("제목없음→저장된 문서 전환 확인 중 에러")
 
 
 def get_hwp():
@@ -938,6 +985,27 @@ def main() -> None:
 
         threading.Thread(target=run, daemon=True).start()
 
+    def flush_untitled_transition() -> None:
+        # 진행 중인 거래(busy_lock)와 한글 COM 호출이 겹치면 안 되므로, 거래가
+        # 없을 때만(락을 바로 잡을 수 있을 때만) 확인한다 - 못 잡으면 이번엔
+        # 건너뛰고 다음 기회(다음 주기 점검, 혹은 다음 거래 시작 시의
+        # _load_state)에 맡긴다.
+        if busy_lock.acquire(blocking=False):
+            try:
+                _flush_untitled_transition_if_needed()
+            finally:
+                busy_lock.release()
+
+    def background_state_flusher() -> None:
+        while True:
+            time.sleep(15)
+            try:
+                flush_untitled_transition()
+            except Exception:
+                log.exception("백그라운드 인용 상태 점검 스레드 에러")
+
+    threading.Thread(target=background_state_flusher, daemon=True).start()
+
     keyboard.add_hotkey("ctrl+alt+c", lambda: start_trigger("addEditCitation"))
     keyboard.add_hotkey("ctrl+alt+a", lambda: start_trigger("addAnnotation"))
     keyboard.add_hotkey("ctrl+alt+n", lambda: start_trigger("addNote"))
@@ -954,6 +1022,7 @@ def main() -> None:
             keyboard.wait()
         except KeyboardInterrupt:
             print("종료합니다.")
+        flush_untitled_transition()
         return
 
     def make_icon_image():
@@ -1035,6 +1104,7 @@ def main() -> None:
             toolbar_root.withdraw()
 
     def on_quit(icon, item):
+        flush_untitled_transition()
         icon.stop()
         if toolbar_root is not None:
             toolbar_root.after(0, toolbar_root.quit)
@@ -1067,6 +1137,7 @@ def main() -> None:
             keyboard.wait()
         except KeyboardInterrupt:
             pass
+        flush_untitled_transition()
         icon.stop()
     print("종료합니다.")
 
