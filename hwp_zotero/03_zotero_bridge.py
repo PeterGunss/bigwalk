@@ -82,6 +82,11 @@ _current_transaction_command: str | None = None
 _loaded_doc_id: str | None = None
 # Document.setBibliographyStyle로 받아둔, 아직 적용 안 한 참고문헌 문단 서식.
 _pending_bib_style: dict | None = None
+# Zotero의 "노트(주석) 삽입" 기능(인용이 포함된 노트/하이라이트를 본문에 바로
+# 삽입)이 Document.insertText로 HTML을 통째로 넣은 뒤, 그 안의 인용 부분을
+# Document.convertPlaceholdersToFields로 "진짜 필드로 바꿔달라"고 요청하는
+# 2단계 과정을 쓴다. placeholder_id -> 방금 평문으로 끼워넣은 위치/문구.
+_pending_placeholders: dict[str, dict] = {}
 
 
 def _state_file_path(doc_id: str) -> str | None:
@@ -584,11 +589,101 @@ def handle_Document_getFields(hwp, doc_id, args):
     ]
 
 
+_PLACEHOLDER_LINK_RE = re.compile(
+    r'<a href="https://www\.zotero\.org/\?([^"]+)">(.*?)</a>', re.DOTALL
+)
+
+
+def _insert_note_html(hwp, raw_html: str) -> None:
+    # Zotero가 노트(주석) 안의 인용을 <a href="https://www.zotero.org/?<임시ID>">
+    # 표시텍스트</a> 형태의 "자리표시 링크"로 바꿔서 통째로 HTML로 보낸다.
+    # 나머지(하이라이트 인용문 등)는 평문으로 그대로 넣고, 이 링크 부분만
+    # 위치를 기억해뒀다가 뒤이어 오는 Document.convertPlaceholdersToFields
+    # 요청에서 진짜 필드로 바꿔준다.
+    pos = 0
+    for m in _PLACEHOLDER_LINK_RE.finditer(raw_html):
+        before = _strip_tags(raw_html[pos:m.start()])
+        if before:
+            hwp.insert_text(before)
+
+        placeholder_id = m.group(1)
+        citation_text = _strip_tags(m.group(2))
+        try:
+            _, start_para, start_pos = hwp.get_pos()
+        except Exception:
+            log.exception("주석 인용 위치 기록 실패(시작): placeholder=%s", placeholder_id)
+            start_para = start_pos = None
+
+        hwp.insert_text(citation_text)
+
+        try:
+            _, end_para, end_pos = hwp.get_pos()
+        except Exception:
+            log.exception("주석 인용 위치 기록 실패(끝): placeholder=%s", placeholder_id)
+            end_para = end_pos = None
+
+        _pending_placeholders[placeholder_id] = {
+            "para": start_para if start_para == end_para else None,
+            "start": start_pos,
+            "end": end_pos,
+            "text": citation_text,
+        }
+        pos = m.end()
+
+    # 맨 끝의 </p></div></body></html> 같은 닫는 태그들 사이에 낀 줄바꿈만
+    # 남는 경우가 많아서, 공백만 있으면 굳이 넣지 않는다.
+    tail = _strip_tags(raw_html[pos:])
+    if tail.strip():
+        hwp.insert_text(tail)
+
+
 def handle_Document_insertText(hwp, doc_id, args):
     # args: [docId, text]
     text = args[1] if len(args) > 1 else (args[0] if args else "")
-    hwp.insert_text(text)
+    if "<a href=\"https://www.zotero.org/?" in text:
+        # 노트/주석 삽입: HTML 안에 나중에 진짜 필드로 바꿔야 할 인용
+        # 자리표시 링크가 섞여 있다.
+        _insert_note_html(hwp, text)
+    else:
+        hwp.insert_text(text)
     return None
+
+
+def handle_Document_convertPlaceholdersToFields(hwp, doc_id, args):
+    # args: [docId, placeholderIds, noteType, fieldType]
+    # (Zotero 클라이언트 소스 기준 실제 배선: 두 번째 자리가 placeholder ID
+    # 목록이다 - 파라미터 이름과 실제 순서가 다르게 붙어있어서 소스만 보면
+    # 헷갈리지만, 실제 트래픽으로 확인한 순서를 따른다.)
+    placeholder_ids = args[1] if len(args) > 1 else []
+    results = []
+    for placeholder_id in placeholder_ids:
+        info = _pending_placeholders.pop(placeholder_id, None)
+        if not info or info.get("para") is None or info.get("start") is None or info.get("end") is None:
+            log.warning("주석 인용을 필드로 바꾸지 못함(위치 정보 없음): placeholder=%s", placeholder_id)
+            continue
+        field_id = f"ZOTERO_{uuid.uuid4().hex[:8]}"
+        try:
+            hwp.select_text(info["para"], info["start"], info["para"], info["end"])
+            hwp.HAction.Run("Delete")  # 방금 평문으로 넣어둔 자리표시 텍스트를 지운다
+            try:
+                hwp.create_field(field_id, "", "")
+            except AttributeError:
+                hwp.CreateField(field_id, "", "")
+            try:
+                hwp.put_field_text(field_id, info["text"])
+            except AttributeError:
+                hwp.PutFieldText(field_id, info["text"])
+        except Exception:
+            log.exception("주석 인용을 필드로 바꾸는 중 에러: placeholder=%s", placeholder_id)
+            continue
+        global _current_field_id
+        _current_field_id = field_id
+        _field_order.append(field_id)
+        _field_codes[field_id] = ""
+        _field_texts[field_id] = info["text"]
+        log.info("노트 안 인용을 실제 필드로 변환함: placeholder=%s -> %s", placeholder_id, field_id)
+        results.append({"id": field_id, "code": "", "text": info["text"], "noteIndex": None})
+    return results
 
 
 def handle_Document_setBibliographyStyle(hwp, doc_id, args):
@@ -656,6 +751,7 @@ HANDLERS = {
     "Field.select": handle_Field_select,
     "Document.getFields": handle_Document_getFields,
     "Document.insertText": handle_Document_insertText,
+    "Document.convertPlaceholdersToFields": handle_Document_convertPlaceholdersToFields,
     "Document.setBibliographyStyle": handle_Document_setBibliographyStyle,
     "Document.complete": handle_Document_complete,
     "Document.displayAlert": handle_Document_displayAlert,
