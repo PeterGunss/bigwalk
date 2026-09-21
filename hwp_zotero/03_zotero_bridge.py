@@ -1019,6 +1019,13 @@ def main() -> None:
         make_button("스타일/언어 설정 (Ctrl+Alt+S)", lambda: start_trigger("setDocPrefs")).pack(fill="x", pady=2)
         make_button("숨기기 (트레이/단축키는 계속 동작)", toolbar_root.withdraw).pack(fill="x", pady=(6, 0))
 
+        credit = tk.Label(
+            frame,
+            text="ZoteroHWP V1.00\nDeveloped by Lee GunHyoung (with Claude Code)\npetergunss@gmail.com",
+            bg="#2b2b2b", fg="#999999", font=("맑은 고딕", 8), justify="center",
+        )
+        credit.pack(fill="x", pady=(10, 0))
+
     def toggle_toolbar(icon=None, item=None):
         if toolbar_root is None:
             return
