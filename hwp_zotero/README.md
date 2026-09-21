@@ -290,3 +290,49 @@ python 03_zotero_bridge.py
 문헌이 매번 다르므로 원래 계속 뜨는 게 맞습니다. 혹시 스타일을 고르는 것으로
 보이는 창이 매번 반복해서 뜬다면 (문헌 검색창과는 다른 창), 그 창의 스크린샷과
 `zotero_debug.log`를 보내주시면 원인을 다시 살펴보겠습니다.
+
+## Stage 5 — 최종 .exe 패키징 (다른 사람에게 배포용)
+
+Stage 3에서는 초기 버전(`02_hotkey_listener.py`)만 패키징했었습니다. 이번엔
+지금까지 완성된 최종본 `03_zotero_bridge.py`(Zotero 연동 + 트레이 + 떠다니는
+메뉴 전부 포함)를 `.exe` 하나로 묶습니다. **이 빌드는 지금 사용 중인 Windows
+컴퓨터에서 직접 실행해야 합니다** (Python이 설치된 컴퓨터에서 "빌드"만 하고,
+나온 `.exe` 파일만 다른 사람에게 전달하면 그 사람 컴퓨터에는 Python이 없어도
+됩니다 — 단, 한글과 Zotero는 설치되어 있어야 합니다).
+
+1. PyInstaller가 없다면 설치 (한 번만):
+
+   ```
+   pip install pyinstaller
+   ```
+
+2. 빌드:
+
+   ```
+   pyinstaller --onefile --name HwpZoteroBridge --hidden-import win32timezone --hidden-import pystray._win32 --hidden-import PIL._tkinter_finder 03_zotero_bridge.py
+   ```
+
+3. 빌드가 끝나면 `dist\HwpZoteroBridge.exe`가 생성됩니다.
+
+4. 테스트: 한글 문서를 열고, `dist` 폴더의 `HwpZoteroBridge.exe`를 더블클릭합니다.
+   지금까지 테스트했던 것과 똑같이 (`Ctrl+Alt+C`/`B`/`S`, 트레이 아이콘, 떠다니는
+   메뉴) 전부 동작하는지 확인해주세요. 검은 터미널 창이 하나 뜨는 건 정상입니다
+   (로그 확인용으로 일단 남겨뒀습니다 — 나중에 원하시면 이 창도 숨길 수 있습니다).
+
+5. **다른 사람에게 배포하는 진짜 테스트**는, 이 `.exe` 파일 하나만 Python이
+   전혀 설치되지 않은 다른 Windows 컴퓨터(한글+Zotero는 설치된)로 복사해서
+   실행해보는 것입니다. 가능하면 그렇게 한 번 확인해주시면 가장 확실합니다.
+
+**참고:**
+- `--hidden-import` 세 개는 `pywin32`(한글 자동화), `pystray`(트레이 아이콘의
+  Windows 백엔드), `Pillow`(tkinter와 함께 쓰일 때)가 PyInstaller의 자동 탐지를
+  가끔 빠뜨리는 경우를 미리 막아둔 것입니다. 그래도 실행 중 `ModuleNotFoundError`
+  같은 에러가 나면, 에러 메시지 전체를 알려주세요 — 대부분 `--hidden-import`
+  하나 더 추가하는 것으로 해결됩니다.
+- 배포용 파일은 `HwpZoteroBridge.exe` 하나면 충분합니다. `zotero_debug.log`와
+  `<파일명>.hwp.zotero-fields.json`은 실행하면서 자동으로 생성되는 파일이라
+  같이 배포할 필요 없습니다.
+- 다른 사람에게 배포할 때는, 그 사람도 자신의 Zotero 라이브러리(문헌 목록)가
+  있어야 하고, Zotero 데스크톱 앱이 켜져 있어야 합니다 (이 `.exe`는 Zotero
+  본체를 대신하는 게 아니라, 켜져 있는 Zotero와 한글을 연결해주는 다리 역할만
+  합니다).
