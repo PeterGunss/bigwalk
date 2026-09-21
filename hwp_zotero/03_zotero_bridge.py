@@ -91,10 +91,23 @@ _pending_placeholders: dict[str, dict] = {}
 # 만든 적이 있는지. Document.getFields가 이 경우엔 빈 목록을 돌려주면 안 되는
 # 것으로 보여서(아래 handle_Document_getFields 주석 참고) 구분해서 처리한다.
 _transaction_had_note_conversion = False
-# Zotero 소스(integration.js) 기준, addEditCitation/addNote/addAnnotation은
-# 전부 Session.prototype.cite()를 거쳐 같은 방식으로 Document.getFields를
-# 호출한다. 그래서 이 셋을 같은 방식으로 취급한다.
-_CITATION_DIALOG_COMMANDS = {"addEditCitation", "addNote", "addAnnotation"}
+# addEditCitation 거래 중에는 Document.getFields를 빈 목록으로 답해도 "인용
+# 하나 검색해서 추가"하는 일반적인 흐름은 잘 동작하는 것이 확인됐다 (Zotero
+# 소스 확인 결과, 이 흐름에서 만들어지는 Citation은 항상 정확히 1개뿐이라서,
+# 뒤에서 필드 목록의 인덱스로 그 필드를 다시 찾는 과정 자체가 없기 때문).
+_EMPTY_FIELDS_COMMANDS = {"addEditCitation"}
+# addNote/addAnnotation은 다르다 - Zotero 소스(integration.js
+# Session.prototype.cite -> _insertNoteIntoDocument)를 확인한 결과, 이 흐름은
+# "지금 만들고 있는 자리표시 필드가 문서의 기존 필드 목록에서 몇 번째인지"를
+# 거래 맨 처음의 Document.getFields 결과로 알아낸 뒤, 그 번호를 기준으로
+# 나중에(주석이 여러 개 포함된 노트일 때) "새로 변환된 필드들이 그 번호 뒤에
+# 몇 번째로 이어지는지"를 계산해서 Field.setCode/setText를 보낼 필드를 다시
+# 찾는다. 그래서 이 두 명령에서는 처음부터 빈 목록이 아니라 실제(추적 중인
+# 전부) 목록을 줘야, 이미 문서에 인용이 있는 상태에서 주석이 여러 개 포함된
+# 노트를 삽입해도 그 번호 계산이 맞아떨어진다. (실제로 이 계산이 틀어지면,
+# 새로 변환된 필드들에 Field.setCode/setText가 아예 오지 않고 Zotero 자체
+# 오류창이 뜨는 것이 로그로 확인됐다.)
+_NOTE_INSERT_COMMANDS = {"addNote", "addAnnotation"}
 
 
 def _state_file_path(doc_id: str) -> str | None:
@@ -568,22 +581,19 @@ def _prune_deleted_fields(hwp) -> None:
 
 def handle_Document_getFields(hwp, doc_id, args):
     _prune_deleted_fields(hwp)
-    # addEditCitation(및 같은 cite() 흐름을 쓰는 addNote/addAnnotation) 거래
-    # 중에는 비어있는 목록으로도 일반적인 "인용 하나 검색해서 추가" 흐름은 잘
-    # 동작하는 것이 확인됐으므로, 그 경우엔 그대로 둔다. 다만 노트(주석) 삽입
-    # 처럼 한 거래 안에서 convertPlaceholdersToFields로 여러 필드를 한꺼번에
-    # 만든 경우엔 빈 목록을 주면 Zotero 쪽 후속 처리가 깨지는 것이 확인돼서
-    # (오류 창 발생, 방금 만든 필드들에 Field.setCode/setText가 아예 오지
-    # 않음), 그 경우에는 예외적으로 실제 목록을 준다.
-    if _current_transaction_command in _CITATION_DIALOG_COMMANDS and not _transaction_had_note_conversion:
+    # addEditCitation 거래 중에는 비어있는 목록으로도 일반적인 "인용 하나
+    # 검색해서 추가" 흐름은 잘 동작하는 것이 확인됐으므로, 노트 변환이 아직
+    # 없었다면 그대로 빈 목록을 준다 (아래 _EMPTY_FIELDS_COMMANDS 주석 참고).
+    if _current_transaction_command in _EMPTY_FIELDS_COMMANDS and not _transaction_had_note_conversion:
         log.info("Document_getFields: %s 거래 중이므로 빈 목록 반환", _current_transaction_command)
         return []
 
-    if _transaction_had_note_conversion:
-        # 방금 만든 노트 필드들은 아직 code가 비어있는 상태라 아래의 "완료된
-        # 필드만" 거르는 조건에 걸려서 빠지게 되는데, Zotero가 이어서
-        # Field.setCode/setText를 보내려면 이 필드들도 목록에 있어야 하는 것
-        # 으로 보인다. 그래서 이 경우엔 거르지 않고 추적 중인 전부를 준다.
+    if _current_transaction_command in _NOTE_INSERT_COMMANDS or _transaction_had_note_conversion:
+        # addNote/addAnnotation은 거래 맨 처음부터(주석/노트를 고르기도 전에)
+        # 실제 필드 목록이 필요하고, 노트 변환이 일어난 뒤에도 방금 만든
+        # (아직 code가 비어있는) 필드들까지 전부 포함해야 한다 - 위
+        # _NOTE_INSERT_COMMANDS 주석 참고. 그래서 이 경우엔 거르지 않고
+        # 추적 중인 전부를 준다.
         ready = list(_field_order)
     else:
         ready = [
@@ -673,8 +683,19 @@ def handle_Document_convertPlaceholdersToFields(hwp, doc_id, args):
     # (Zotero 클라이언트 소스 기준 실제 배선: 두 번째 자리가 placeholder ID
     # 목록이다 - 파라미터 이름과 실제 순서가 다르게 붙어있어서 소스만 보면
     # 헷갈리지만, 실제 트래픽으로 확인한 순서를 따른다.)
+    #
+    # Zotero 소스(integration.js _insertNoteIntoDocument) 확인 결과, 인용이
+    # 여러 개인 노트에서는 placeholder들을 "문서에서 뒤에 있는 것부터" 순서로
+    # 넘겨준다 (앞쪽을 먼저 지우면 뒤쪽 위치가 밀려서 엉망이 되는 걸 막으려고).
+    # 그래서 실제 지우기/필드만들기 작업은 그 순서 그대로 해야 하지만,
+    # _field_order(추적 목록)에는 문서에 실제 나타나는 순서(앞->뒤)로 넣어야
+    # 한다 - Document.getFields를 다시 부를 때 Zotero가 "몇 번째 필드인지"로
+    # 새로 만들어진 필드들을 다시 찾아가는데, 그 계산이 문서 순서를 전제로
+    # 하기 때문이다 (뒤섞인 순서로 주면 엉뚱한 필드에 Field.setCode/setText가
+    # 가거나 아예 안 가서 Zotero 쪽 오류 창이 뜬다).
     placeholder_ids = args[1] if len(args) > 1 else []
     results = []
+    new_fields_in_doc_order = []  # (para, start, field_id) - 나중에 위치순 정렬
     for placeholder_id in placeholder_ids:
         info = _pending_placeholders.pop(placeholder_id, None)
         if not info or info.get("para") is None or info.get("start") is None or info.get("end") is None:
@@ -697,12 +718,14 @@ def handle_Document_convertPlaceholdersToFields(hwp, doc_id, args):
             continue
         global _current_field_id, _transaction_had_note_conversion
         _current_field_id = field_id
-        _field_order.append(field_id)
         _field_codes[field_id] = ""
         _field_texts[field_id] = info["text"]
         _transaction_had_note_conversion = True
+        new_fields_in_doc_order.append((info["para"], info["start"], field_id))
         log.info("노트 안 인용을 실제 필드로 변환함: placeholder=%s -> %s", placeholder_id, field_id)
         results.append({"id": field_id, "code": "", "text": info["text"], "noteIndex": None})
+    new_fields_in_doc_order.sort(key=lambda t: (t[0], t[1]))
+    _field_order.extend(fid for _, _, fid in new_fields_in_doc_order)
     return results
 
 
