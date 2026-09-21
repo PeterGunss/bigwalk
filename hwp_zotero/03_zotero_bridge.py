@@ -91,6 +91,10 @@ _pending_placeholders: dict[str, dict] = {}
 # 만든 적이 있는지. Document.getFields가 이 경우엔 빈 목록을 돌려주면 안 되는
 # 것으로 보여서(아래 handle_Document_getFields 주석 참고) 구분해서 처리한다.
 _transaction_had_note_conversion = False
+# Zotero 소스(integration.js) 기준, addEditCitation/addNote/addAnnotation은
+# 전부 Session.prototype.cite()를 거쳐 같은 방식으로 Document.getFields를
+# 호출한다. 그래서 이 셋을 같은 방식으로 취급한다.
+_CITATION_DIALOG_COMMANDS = {"addEditCitation", "addNote", "addAnnotation"}
 
 
 def _state_file_path(doc_id: str) -> str | None:
@@ -564,14 +568,15 @@ def _prune_deleted_fields(hwp) -> None:
 
 def handle_Document_getFields(hwp, doc_id, args):
     _prune_deleted_fields(hwp)
-    # addEditCitation 거래 중에는 비어있는 목록으로도 일반적인 "인용 하나
-    # 검색해서 추가" 흐름은 잘 동작하는 것이 확인됐으므로, 그 경우엔 그대로
-    # 둔다. 다만 노트(주석) 삽입처럼 한 거래 안에서 convertPlaceholdersToFields로
-    # 여러 필드를 한꺼번에 만든 경우엔 빈 목록을 주면 Zotero 쪽 후속 처리가
-    # 깨지는 것이 확인돼서(오류 창 발생, 방금 만든 필드들에 Field.setCode/
-    # setText가 아예 오지 않음), 그 경우에는 예외적으로 실제 목록을 준다.
-    if _current_transaction_command == "addEditCitation" and not _transaction_had_note_conversion:
-        log.info("Document_getFields: addEditCitation 거래 중이므로 빈 목록 반환")
+    # addEditCitation(및 같은 cite() 흐름을 쓰는 addNote/addAnnotation) 거래
+    # 중에는 비어있는 목록으로도 일반적인 "인용 하나 검색해서 추가" 흐름은 잘
+    # 동작하는 것이 확인됐으므로, 그 경우엔 그대로 둔다. 다만 노트(주석) 삽입
+    # 처럼 한 거래 안에서 convertPlaceholdersToFields로 여러 필드를 한꺼번에
+    # 만든 경우엔 빈 목록을 주면 Zotero 쪽 후속 처리가 깨지는 것이 확인돼서
+    # (오류 창 발생, 방금 만든 필드들에 Field.setCode/setText가 아예 오지
+    # 않음), 그 경우에는 예외적으로 실제 목록을 준다.
+    if _current_transaction_command in _CITATION_DIALOG_COMMANDS and not _transaction_had_note_conversion:
+        log.info("Document_getFields: %s 거래 중이므로 빈 목록 반환", _current_transaction_command)
         return []
 
     if _transaction_had_note_conversion:
@@ -878,8 +883,13 @@ def main() -> None:
         print("[실패] keyboard 패키지가 없습니다. 'pip install -r requirements.txt'를 실행해주세요.")
         sys.exit(1)
 
-    log.info("Zotero 다리 스크립트 시작. Ctrl+Alt+C: 인용 삽입, Ctrl+Alt+B: 참고문헌, Ctrl+Alt+S: 스타일/언어 설정")
+    log.info(
+        "Zotero 다리 스크립트 시작. Ctrl+Alt+C: 인용 삽입, Ctrl+Alt+A: 주석 삽입, "
+        "Ctrl+Alt+N: 노트 삽입, Ctrl+Alt+B: 참고문헌, Ctrl+Alt+S: 스타일/언어 설정"
+    )
     print("Ctrl+Alt+C 를 누르면 Zotero 인용 삽입 창이 열립니다.")
+    print("Ctrl+Alt+A 를 누르면 Zotero 주석(하이라이트) 삽입 검색창이 바로 열립니다.")
+    print("Ctrl+Alt+N 를 누르면 Zotero 노트 삽입 검색창이 바로 열립니다.")
     print("Ctrl+Alt+B 를 누르면 Zotero 참고문헌 삽입 창이 열립니다.")
     print("Ctrl+Alt+S 를 누르면 인용 스타일/언어 설정 창이 열립니다.")
     print("  (이 스크립트를 끄지 않고 계속 켜둔 상태에서 삽입한 인용만 기억합니다.)")
@@ -906,6 +916,8 @@ def main() -> None:
         threading.Thread(target=run, daemon=True).start()
 
     keyboard.add_hotkey("ctrl+alt+c", lambda: start_trigger("addEditCitation"))
+    keyboard.add_hotkey("ctrl+alt+a", lambda: start_trigger("addAnnotation"))
+    keyboard.add_hotkey("ctrl+alt+n", lambda: start_trigger("addNote"))
     keyboard.add_hotkey("ctrl+alt+b", lambda: start_trigger("addEditBibliography"))
     keyboard.add_hotkey("ctrl+alt+s", lambda: start_trigger("setDocPrefs"))
 
@@ -978,6 +990,8 @@ def main() -> None:
             )
 
         make_button("인용 삽입 (Ctrl+Alt+C)", lambda: start_trigger("addEditCitation")).pack(fill="x", pady=2)
+        make_button("주석 삽입 (Ctrl+Alt+A)", lambda: start_trigger("addAnnotation")).pack(fill="x", pady=2)
+        make_button("노트 삽입 (Ctrl+Alt+N)", lambda: start_trigger("addNote")).pack(fill="x", pady=2)
         make_button("참고문헌 (Ctrl+Alt+B)", lambda: start_trigger("addEditBibliography")).pack(fill="x", pady=2)
         make_button("스타일/언어 설정 (Ctrl+Alt+S)", lambda: start_trigger("setDocPrefs")).pack(fill="x", pady=2)
         make_button("숨기기 (트레이/단축키는 계속 동작)", toolbar_root.withdraw).pack(fill="x", pady=(6, 0))
@@ -1001,6 +1015,8 @@ def main() -> None:
         "Zotero-한글 다리",
         menu=pystray.Menu(
             pystray.MenuItem("인용 삽입 (Ctrl+Alt+C)", lambda icon, item: start_trigger("addEditCitation")),
+            pystray.MenuItem("주석 삽입 (Ctrl+Alt+A)", lambda icon, item: start_trigger("addAnnotation")),
+            pystray.MenuItem("노트 삽입 (Ctrl+Alt+N)", lambda icon, item: start_trigger("addNote")),
             pystray.MenuItem("참고문헌 (Ctrl+Alt+B)", lambda icon, item: start_trigger("addEditBibliography")),
             pystray.MenuItem("스타일/언어 설정 (Ctrl+Alt+S)", lambda icon, item: start_trigger("setDocPrefs")),
             pystray.Menu.SEPARATOR,
