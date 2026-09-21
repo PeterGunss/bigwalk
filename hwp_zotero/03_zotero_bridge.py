@@ -87,6 +87,10 @@ _pending_bib_style: dict | None = None
 # Document.convertPlaceholdersToFields로 "진짜 필드로 바꿔달라"고 요청하는
 # 2단계 과정을 쓴다. placeholder_id -> 방금 평문으로 끼워넣은 위치/문구.
 _pending_placeholders: dict[str, dict] = {}
+# 지금 거래(run_transaction 한 번) 안에서 convertPlaceholdersToFields로 필드를
+# 만든 적이 있는지. Document.getFields가 이 경우엔 빈 목록을 돌려주면 안 되는
+# 것으로 보여서(아래 handle_Document_getFields 주석 참고) 구분해서 처리한다.
+_transaction_had_note_conversion = False
 
 
 def _state_file_path(doc_id: str) -> str | None:
@@ -560,16 +564,26 @@ def _prune_deleted_fields(hwp) -> None:
 
 def handle_Document_getFields(hwp, doc_id, args):
     _prune_deleted_fields(hwp)
-    # addEditCitation 거래 중에는 비어있는 목록으로도 이미 잘 동작하는 것이
-    # 확인됐으므로, 굳이 바꾸지 않고 그대로 둔다. 참고문헌을 만들 때만 실제
-    # 목록을 준다.
-    if _current_transaction_command == "addEditCitation":
+    # addEditCitation 거래 중에는 비어있는 목록으로도 일반적인 "인용 하나
+    # 검색해서 추가" 흐름은 잘 동작하는 것이 확인됐으므로, 그 경우엔 그대로
+    # 둔다. 다만 노트(주석) 삽입처럼 한 거래 안에서 convertPlaceholdersToFields로
+    # 여러 필드를 한꺼번에 만든 경우엔 빈 목록을 주면 Zotero 쪽 후속 처리가
+    # 깨지는 것이 확인돼서(오류 창 발생, 방금 만든 필드들에 Field.setCode/
+    # setText가 아예 오지 않음), 그 경우에는 예외적으로 실제 목록을 준다.
+    if _current_transaction_command == "addEditCitation" and not _transaction_had_note_conversion:
         log.info("Document_getFields: addEditCitation 거래 중이므로 빈 목록 반환")
         return []
 
-    ready = [
-        fid for fid in _field_order if _field_codes.get(fid) not in (None, "", "TEMP")
-    ]
+    if _transaction_had_note_conversion:
+        # 방금 만든 노트 필드들은 아직 code가 비어있는 상태라 아래의 "완료된
+        # 필드만" 거르는 조건에 걸려서 빠지게 되는데, Zotero가 이어서
+        # Field.setCode/setText를 보내려면 이 필드들도 목록에 있어야 하는 것
+        # 으로 보인다. 그래서 이 경우엔 거르지 않고 추적 중인 전부를 준다.
+        ready = list(_field_order)
+    else:
+        ready = [
+            fid for fid in _field_order if _field_codes.get(fid) not in (None, "", "TEMP")
+        ]
     log.info(
         "Document_getFields: 추적 중 %d개 중 완료된 필드 %d개",
         len(_field_order),
@@ -676,11 +690,12 @@ def handle_Document_convertPlaceholdersToFields(hwp, doc_id, args):
         except Exception:
             log.exception("주석 인용을 필드로 바꾸는 중 에러: placeholder=%s", placeholder_id)
             continue
-        global _current_field_id
+        global _current_field_id, _transaction_had_note_conversion
         _current_field_id = field_id
         _field_order.append(field_id)
         _field_codes[field_id] = ""
         _field_texts[field_id] = info["text"]
+        _transaction_had_note_conversion = True
         log.info("노트 안 인용을 실제 필드로 변환함: placeholder=%s -> %s", placeholder_id, field_id)
         results.append({"id": field_id, "code": "", "text": info["text"], "noteIndex": None})
     return results
@@ -771,8 +786,9 @@ def dispatch(hwp, doc_id, command, args):
 
 
 def run_transaction(session, requests_module, initial_command: str) -> None:
-    global _current_transaction_command
+    global _current_transaction_command, _transaction_had_note_conversion
     _current_transaction_command = initial_command
+    _transaction_had_note_conversion = False
     hwp = get_hwp()
     doc_id = get_doc_id(hwp)
     _load_state(hwp, doc_id)
