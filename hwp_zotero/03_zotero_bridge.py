@@ -146,6 +146,29 @@ def _load_state(hwp, doc_id: str) -> None:
     global _loaded_doc_id, _document_data
     if doc_id == _loaded_doc_id:
         return  # 이미 이 문서 상태가 메모리에 로드돼 있음
+
+    if (
+        _loaded_doc_id == "hwp-untitled-document"
+        and doc_id
+        and doc_id != "hwp-untitled-document"
+        and _field_order
+    ):
+        # 저장 안 된 "제목없음" 문서 상태로 인용을 넣다가, 방금 처음으로
+        # 파일 저장을 해서 실제 경로가 생긴 경우다. 프로그램은 계속 켜져
+        # 있었으니 메모리에 있는 내용이 맞는 내용이다 - 이걸 "다른 문서로
+        # 전환"으로 착각해서 지워버리면(_reset_state) 아직 디스크에 한 번도
+        # 저장되지 못했던 인용 정보가 통째로 사라진다(사용자 보고로 확인된
+        # 문제). 지우지 않고 그대로 새 경로로 이어서 쓰고, 지금 바로 한 번
+        # 저장해서 다음부터는 재시작/재오픈해도 유지되게 한다.
+        log.info(
+            "제목없음 문서가 방금 저장되어 실제 경로가 생김: %s. "
+            "지금까지 메모리에 있던 인용 %d개를 그대로 이어감.",
+            doc_id, len(_field_order),
+        )
+        _loaded_doc_id = doc_id
+        _save_state(doc_id)
+        return
+
     _reset_state()
     _loaded_doc_id = doc_id
     path = _state_file_path(doc_id)
