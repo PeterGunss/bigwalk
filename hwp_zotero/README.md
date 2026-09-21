@@ -217,8 +217,8 @@ Zotero가 실제로 어떤 명령/인자를 보내는지 알 수 있어서 다�
 **새로 추가된 기능 3가지 (모두 처음 시도라 테스트가 필요합니다):**
 
 1. **인용 정보가 문서 재오픈/스크립트 재시작 후에도 유지됨** — 단, **한글에서
-   문서를 저장(Ctrl+S)해둔 상태**여야 합니다. 저장하면 문서와 같은 폴더에
-   `<파일명>.hwp.zotero-fields.json` 파일이 생기는데, 이게 인용 정보 저장소입니다.
+   문서를 저장(Ctrl+S)해둔 상태**여야 합니다. 저장 정보는 문서 폴더가 아니라
+   `%LOCALAPPDATA%\HwpZoteroBridge\fields\` 안에 (문서 눈에 안 보이게) 저장됩니다.
    (아직 저장 안 한 "제목없음" 문서는 재시작 후 "같은 문서"인지 구분할 방법이
    없어서 이 기능이 적용되지 않습니다 — 먼저 저장부터 해주세요.)
 
@@ -306,18 +306,21 @@ Stage 3에서는 초기 버전(`02_hotkey_listener.py`)만 패키징했었습니
    pip install pyinstaller
    ```
 
-2. 빌드:
+2. 빌드 (터미널 창이 안 뜨도록 `--noconsole` 포함):
 
    ```
-   pyinstaller --onefile --name HwpZoteroBridge --hidden-import win32timezone --hidden-import pystray._win32 --hidden-import PIL._tkinter_finder 03_zotero_bridge.py
+   pyinstaller --onefile --noconsole --name HwpZoteroBridge --hidden-import win32timezone --hidden-import pystray._win32 --hidden-import PIL._tkinter_finder 03_zotero_bridge.py
    ```
 
 3. 빌드가 끝나면 `dist\HwpZoteroBridge.exe`가 생성됩니다.
 
 4. 테스트: 한글 문서를 열고, `dist` 폴더의 `HwpZoteroBridge.exe`를 더블클릭합니다.
-   지금까지 테스트했던 것과 똑같이 (`Ctrl+Alt+C`/`B`/`S`, 트레이 아이콘, 떠다니는
-   메뉴) 전부 동작하는지 확인해주세요. 검은 터미널 창이 하나 뜨는 건 정상입니다
-   (로그 확인용으로 일단 남겨뒀습니다 — 나중에 원하시면 이 창도 숨길 수 있습니다).
+   이번엔 터미널 창 없이 곧바로 트레이 아이콘과 떠다니는 메뉴만 나타나야
+   합니다. 지금까지 테스트했던 것과 똑같이 (`Ctrl+Alt+C`/`B`/`S`, 트레이
+   아이콘, 떠다니는 메뉴) 전부 동작하는지 확인해주세요.
+
+   (문제가 생겨서 로그를 봐야 하면, `zotero_debug.log`는 여전히 exe가 있는
+   폴더에 그대로 생성됩니다 — 터미널 창만 없어진 것이고 기록은 남습니다.)
 
 5. **다른 사람에게 배포하는 진짜 테스트**는, 이 `.exe` 파일 하나만 Python이
    전혀 설치되지 않은 다른 Windows 컴퓨터(한글+Zotero는 설치된)로 복사해서
@@ -329,9 +332,12 @@ Stage 3에서는 초기 버전(`02_hotkey_listener.py`)만 패키징했었습니
   가끔 빠뜨리는 경우를 미리 막아둔 것입니다. 그래도 실행 중 `ModuleNotFoundError`
   같은 에러가 나면, 에러 메시지 전체를 알려주세요 — 대부분 `--hidden-import`
   하나 더 추가하는 것으로 해결됩니다.
-- 배포용 파일은 `HwpZoteroBridge.exe` 하나면 충분합니다. `zotero_debug.log`와
-  `<파일명>.hwp.zotero-fields.json`은 실행하면서 자동으로 생성되는 파일이라
-  같이 배포할 필요 없습니다.
+- 배포용 파일은 `HwpZoteroBridge.exe` 하나면 충분합니다. `zotero_debug.log`는
+  실행하면서 자동으로 생성되는 파일이라 같이 배포할 필요 없고, 인용 정보
+  저장 파일도 이제 문서 폴더가 아니라 `%LOCALAPPDATA%\HwpZoteroBridge\` 안에
+  생기므로 문서를 다른 사람과 공유해도 딸려가지 않습니다. (이전 버전(Python
+  스크립트)으로 테스트하면서 문서 옆에 생겼던 `<파일명>.hwp.zotero-fields.json`
+  파일은 이제 쓰이지 않으니 지우셔도 됩니다.)
 - 다른 사람에게 배포할 때는, 그 사람도 자신의 Zotero 라이브러리(문헌 목록)가
   있어야 하고, Zotero 데스크톱 앱이 켜져 있어야 합니다 (이 `.exe`는 Zotero
   본체를 대신하는 게 아니라, 켜져 있는 Zotero와 한글을 연결해주는 다리 역할만

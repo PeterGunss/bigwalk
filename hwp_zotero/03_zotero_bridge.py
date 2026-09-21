@@ -28,6 +28,7 @@ Zotero는 로컬 23119 포트에서 HTTP 서버를 띄워두고 있다. 우리�
    이 파일 내용을 그대로 알려줄 것.
 """
 
+import hashlib
 import html
 import json
 import logging
@@ -35,6 +36,7 @@ import os
 import platform
 import re
 import sys
+import tempfile
 import uuid
 
 ZOTERO_BASE_URL = "http://127.0.0.1:23119/connector/document"
@@ -44,6 +46,14 @@ RESPOND_URL = f"{ZOTERO_BASE_URL}/respond"
 EXEC_TIMEOUT = 30
 # 사용자가 Zotero의 검색/선택 창에서 시간을 들여 고를 수 있으므로 길게 잡는다.
 RESPOND_TIMEOUT = 600
+
+# PyInstaller로 --noconsole(터미널 창 숨김)로 빌드하면 sys.stdout/stderr가
+# None이 되는데, 그 상태에서 print()나 로깅이 그걸 쓰려고 하면 죽는다. 콘솔이
+# 없을 때는 아무 데도 안 쓰는 가짜 스트림으로 미리 바꿔둔다.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -79,9 +89,23 @@ def _state_file_path(doc_id: str) -> str | None:
     # 안 한 문서면 항상 같은 문자열("hwp-untitled-document")이다. 후자는 스크립트를
     # 재시작했을 때 "이전의 그 문서"인지 알아낼 방법이 없으므로 영구 저장을
     # 포기한다. (사용자가 먼저 한글에서 파일 저장을 하면 이 문제가 없어진다.)
+    #
+    # 예전엔 문서 옆에 "<파일명>.zotero-fields.json"으로 바로 만들었는데,
+    # 사용자 문서 폴더에 눈에 보이는 파일이 하나 더 생기는 게 거슬린다는
+    # 피드백이 있어서, 문서와 같은 폴더가 아니라 사용자별 앱데이터 폴더
+    # (%LOCALAPPDATA%\HwpZoteroBridge\fields\) 안에 문서 경로의 해시값으로
+    # 이름 붙여서 저장한다. 문서 폴더에는 아무 것도 남지 않는다.
     if not doc_id or doc_id == "hwp-untitled-document":
         return None
-    return doc_id + ".zotero-fields.json"
+    base_dir = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or tempfile.gettempdir()
+    state_dir = os.path.join(base_dir, "HwpZoteroBridge", "fields")
+    try:
+        os.makedirs(state_dir, exist_ok=True)
+    except OSError:
+        log.exception("인용 상태 저장 폴더를 만들 수 없어 영속성 기능을 이번엔 건너뜁니다: %s", state_dir)
+        return None
+    digest = hashlib.sha256(doc_id.encode("utf-8")).hexdigest()
+    return os.path.join(state_dir, f"{digest}.json")
 
 
 def _reset_state() -> None:
@@ -93,14 +117,17 @@ def _reset_state() -> None:
 
 
 def _existing_hwp_field_names(hwp) -> set[str] | None:
-    # 지금 한글 문서에 실제로 남아있는 누름틀 이름 목록. 저장된 상태와 대조해서
-    # 사용자가 한글에서 직접 지워버린 필드를 걸러내는 데 쓴다. 실패하면 None을
-    # 돌려주고, 호출하는 쪽에서는 "대조 생략"으로 처리한다.
+    # 지금 한글 문서에 실제로 남아있는 필드 이름 목록. Document.getFields가
+    # 죽은(사용자가 직접 지운) 필드를 계속 돌려주지 않게 걸러내는 데만 쓴다.
+    # option=0(전체 필드)으로 최대한 넓게 잡아서, 누름틀/셀필드 분류가 문서를
+    # 저장하고 다시 열었을 때 살짝 달라지는 경우에도 "실제로 있는데 없다고
+    # 착각"하는 일이 최대한 없도록 한다. 실패하면 None을 돌려주고, 호출하는
+    # 쪽에서는 "대조 생략(=지우지 않음)"으로 처리한다.
     try:
         try:
-            raw = hwp.get_field_list(number=0, option=2)  # 0=이름 그대로, 2=누름틀만
+            raw = hwp.get_field_list(number=0, option=0)  # 0=이름 그대로, 0=전체
         except AttributeError:
-            raw = hwp.GetFieldList(Number=0, option=2)
+            raw = hwp.GetFieldList(Number=0, option=0)
         if not raw:
             return set()
         return {name for name in raw.split("\x02") if name}
@@ -110,6 +137,12 @@ def _existing_hwp_field_names(hwp) -> set[str] | None:
 
 
 def _load_state(hwp, doc_id: str) -> None:
+    # 여기서는 "문서에 지금 실제로 있는지"를 대조해서 걸러내지 않는다 - 문서를
+    # 닫았다 막 다시 열었을 때는 한글의 필드 목록 조회가 일시적으로 비어있거나
+    # 잘못된 값을 줄 수 있고, 그 상태에서 걸러내면 멀쩡한 인용 정보가 통째로
+    # 조용히 사라지는 심각한 문제가 있었다(사용자 보고로 확인됨). 죽은 필드를
+    # Zotero가 재사용하려는 문제는 Document.getFields를 응답할 때
+    # (_prune_deleted_fields) 그때그때 확인하는 것으로 충분하다.
     global _loaded_doc_id, _document_data
     if doc_id == _loaded_doc_id:
         return  # 이미 이 문서 상태가 메모리에 로드돼 있음
@@ -126,23 +159,15 @@ def _load_state(hwp, doc_id: str) -> None:
         log.exception("저장된 인용 상태 파일을 읽지 못함: %s", path)
         return
 
-    existing_names = _existing_hwp_field_names(hwp)
     _document_data = saved.get("document_data", "")
-    skipped = 0
     for entry in saved.get("fields", []):
         fid = entry.get("id")
         if not fid:
             continue
-        if existing_names is not None and fid not in existing_names:
-            skipped += 1
-            continue
         _field_order.append(fid)
         _field_codes[fid] = entry.get("code", "")
         _field_texts[fid] = entry.get("text", "")
-    log.info(
-        "저장된 인용 상태 불러옴: %s (필드 %d개 복원, %d개는 문서에 없어져서 건너뜀)",
-        path, len(_field_order), skipped,
-    )
+    log.info("저장된 인용 상태 불러옴: %s (필드 %d개 복원)", path, len(_field_order))
 
 
 def _save_state(doc_id: str) -> None:
@@ -483,12 +508,26 @@ def _prune_deleted_fields(hwp) -> None:
     existing = _existing_hwp_field_names(hwp)
     if existing is None:
         return  # 목록을 못 가져왔으면 기존 추적 상태를 그대로 믿는다
-    for fid in list(_field_order):
-        if fid not in existing:
-            log.info("문서에서 지워진 필드라 추적 목록에서도 제거함: %s", fid)
-            _field_order.remove(fid)
-            _field_codes.pop(fid, None)
-            _field_texts.pop(fid, None)
+    missing = [fid for fid in _field_order if fid not in existing]
+    if not missing:
+        return
+    if len(missing) == len(_field_order):
+        # 추적 중인 필드가 "전부 다" 한꺼번에 사라진 것으로 나오면, 실제로
+        # 지워졌다기보다 한글의 필드 목록 조회 자체가 일시적으로 이상한 값을
+        # 준 것일 가능성이 높다(문서를 막 열었을 때 등). 이 경우 아무것도
+        # 지우지 않고 그대로 둔다 - 인용 정보가 조용히 통째로 사라지는 것보다
+        # 죽은 필드를 한 번 더 재사용 시도하다 실패하는 쪽이 훨씬 안전하다.
+        log.warning(
+            "추적 중인 필드 %d개가 전부 문서에 없다고 나와서 의심스러워 "
+            "정리를 건너뜁니다. 실제 필드 목록=%r, 추적 목록=%r",
+            len(_field_order), sorted(existing), list(_field_order),
+        )
+        return
+    for fid in missing:
+        log.info("문서에서 지워진 필드라 추적 목록에서도 제거함: %s", fid)
+        _field_order.remove(fid)
+        _field_codes.pop(fid, None)
+        _field_texts.pop(fid, None)
 
 
 def handle_Document_getFields(hwp, doc_id, args):
