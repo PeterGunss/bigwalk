@@ -739,7 +739,7 @@ def main() -> None:
         import pystray
         from PIL import Image, ImageDraw
     except ImportError:
-        print("[안내] pystray/Pillow가 없어서 트레이 아이콘 없이 단축키만 사용합니다.")
+        print("[안내] pystray/Pillow가 없어서 트레이 아이콘/떠다니는 메뉴 없이 단축키만 사용합니다.")
         print("       (아이콘 버튼도 쓰려면 'pip install -r requirements.txt' 후 다시 실행해주세요.)")
         try:
             keyboard.wait()
@@ -748,14 +748,78 @@ def main() -> None:
         return
 
     def make_icon_image():
-        img = Image.new("RGB", (64, 64), "white")
+        # 폰트 설치 여부에 기대지 않고, 두꺼운 선으로 큰 Z를 직접 그려서 작은
+        # 트레이 아이콘 크기에서도 눈에 잘 띄게 한다. 배경은 눈에 띄는 붉은 원.
+        size = 64
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
-        draw.rectangle([2, 2, 61, 61], outline="black", width=3)
-        draw.text((22, 20), "Z", fill="black")
+        draw.ellipse([2, 2, size - 2, size - 2], fill=(204, 41, 54, 255))
+        pad, bar = 15, 9
+        top, bottom = pad, size - pad
+        draw.line([(pad, top), (size - pad, top)], fill="white", width=bar)
+        draw.line([(size - pad, top), (pad, bottom)], fill="white", width=bar)
+        draw.line([(pad, bottom), (size - pad, bottom)], fill="white", width=bar)
         return img
+
+    try:
+        import tkinter as tk
+    except ImportError:
+        tk = None
+        log.warning("tkinter를 불러올 수 없어 떠다니는 메뉴는 생략합니다 (트레이 아이콘/단축키는 계속 동작).")
+
+    toolbar_root = None
+    if tk is not None:
+        toolbar_root = tk.Tk()
+        toolbar_root.title("Zotero-한글")
+        toolbar_root.attributes("-topmost", True)
+        toolbar_root.overrideredirect(True)  # 제목줄 없는 작은 패널
+        screen_w = toolbar_root.winfo_screenwidth()
+        toolbar_root.geometry(f"+{screen_w - 190}+80")
+
+        frame = tk.Frame(toolbar_root, bg="#2b2b2b", padx=6, pady=6)
+        frame.pack()
+
+        drag = {"x": 0, "y": 0}
+
+        def start_drag(event):
+            drag["x"], drag["y"] = event.x, event.y
+
+        def do_drag(event):
+            x = toolbar_root.winfo_x() - drag["x"] + event.x
+            y = toolbar_root.winfo_y() - drag["y"] + event.y
+            toolbar_root.geometry(f"+{x}+{y}")
+
+        handle = tk.Label(
+            frame, text="⠿ Zotero-한글  (드래그해서 옮기기)",
+            bg="#2b2b2b", fg="white", font=("맑은 고딕", 9), cursor="fleur",
+        )
+        handle.pack(fill="x", pady=(0, 4))
+        handle.bind("<ButtonPress-1>", start_drag)
+        handle.bind("<B1-Motion>", do_drag)
+
+        def make_button(text, command):
+            return tk.Button(
+                frame, text=text, command=command, width=22,
+                font=("맑은 고딕", 9),
+            )
+
+        make_button("인용 삽입 (Ctrl+Alt+C)", lambda: start_trigger("addEditCitation")).pack(fill="x", pady=2)
+        make_button("참고문헌 (Ctrl+Alt+B)", lambda: start_trigger("addEditBibliography")).pack(fill="x", pady=2)
+        make_button("스타일/언어 설정 (Ctrl+Alt+S)", lambda: start_trigger("setDocPrefs")).pack(fill="x", pady=2)
+        make_button("숨기기 (트레이/단축키는 계속 동작)", toolbar_root.withdraw).pack(fill="x", pady=(6, 0))
+
+    def toggle_toolbar(icon=None, item=None):
+        if toolbar_root is None:
+            return
+        if toolbar_root.state() == "withdrawn":
+            toolbar_root.deiconify()
+        else:
+            toolbar_root.withdraw()
 
     def on_quit(icon, item):
         icon.stop()
+        if toolbar_root is not None:
+            toolbar_root.after(0, toolbar_root.quit)
 
     icon = pystray.Icon(
         "zotero_hwp_bridge",
@@ -766,12 +830,24 @@ def main() -> None:
             pystray.MenuItem("참고문헌 (Ctrl+Alt+B)", lambda icon, item: start_trigger("addEditBibliography")),
             pystray.MenuItem("스타일/언어 설정 (Ctrl+Alt+S)", lambda icon, item: start_trigger("setDocPrefs")),
             pystray.Menu.SEPARATOR,
+            pystray.MenuItem("떠다니는 메뉴 보이기/숨기기", toggle_toolbar),
             pystray.MenuItem("종료", on_quit),
         ),
     )
-    print("작업표시줄 트레이 아이콘이 떴습니다. 아이콘을 클릭해서 메뉴로도 사용할 수 있습니다.")
-    log.info("트레이 아이콘 시작")
-    icon.run()
+    print("트레이 아이콘 + 화면에 떠다니는 메뉴가 함께 켜졌습니다 (단축키도 그대로 동작).")
+    log.info("트레이 아이콘 + 떠다니는 메뉴 시작")
+    # pystray를 detached 모드로 돌려서, tkinter의 메인루프와 한 프로세스에서
+    # 함께 돌아가게 한다 (둘 다 "메인 스레드의 루프"를 원하므로, 트레이 쪽을
+    # 백그라운드로 돌리고 tkinter 쪽을 메인 스레드에 남겨둔다).
+    icon.run_detached()
+    if toolbar_root is not None:
+        toolbar_root.mainloop()
+    else:
+        try:
+            keyboard.wait()
+        except KeyboardInterrupt:
+            pass
+        icon.stop()
     print("종료합니다.")
 
 
