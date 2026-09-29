@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>2026 임상교육 포스터</title>
+<style>
+  @font-face{font-family:'Noto Serif KR';src:url(fonts/NotoSerifKR.ttf);font-weight:200 900}
+  @font-face{font-family:'Noto Sans KR';src:url(fonts/NotoSansKR.ttf);font-weight:100 900}
+  @font-face{font-family:'Cormorant Garamond';src:url(fonts/Cormorant.ttf);font-weight:300 700}
+  @font-face{font-family:'Cormorant Garamond';src:url(fonts/Cormorant-Italic.ttf);font-weight:300 700;font-style:italic}
+  :root{
+    --paper:#f1e8d6; --paper2:#e8dcc4; --ink:#2b201a; --ink2:#5a4a3e;
+    --oxblood:#4a1a17; --oxblood2:#321110; --gold:#b08d57; --gold2:#d6bb85; --rule:#b9a27c;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:1240px;height:1754px;background:var(--paper)}
+  body{font-variant-numeric:lining-nums;font-family:'Noto Serif KR',serif;color:var(--ink);-webkit-font-smoothing:antialiased}
+  .poster{position:relative;width:1240px;height:1754px;overflow:hidden;
+    background:
+      radial-gradient(ellipse at 50% 55%, rgba(255,250,238,.55), rgba(0,0,0,0) 65%),
+      radial-gradient(ellipse at 50% 60%, rgba(0,0,0,0) 60%, rgba(90,60,30,.18) 100%),
+      var(--paper);}
+  .poster::before{content:"";position:absolute;inset:0;opacity:.35;mix-blend-mode:multiply;pointer-events:none;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .45  0 0 0 0 .35  0 0 0 0 .22  0 0 0 .35 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");}
+
+  /* ---------- header ---------- */
+  header{position:relative;height:530px;color:var(--paper);text-align:center;padding-top:50px;
+    background:
+      radial-gradient(ellipse at 50% 30%, #5e221d 0%, var(--oxblood) 45%, var(--oxblood2) 100%);}
+  header::after{content:"";position:absolute;inset:22px;border:1px solid rgba(214,187,133,.55);pointer-events:none}
+  header .inner-frame{position:absolute;inset:30px;border:1px solid rgba(214,187,133,.25);pointer-events:none}
+  .eyebrow{font-family:'Noto Serif KR';font-weight:500;font-size:24px;letter-spacing:.32em;color:var(--gold2)}
+  .eyebrow b{font-family:'Cormorant Garamond';font-weight:600;font-size:30px;letter-spacing:.12em;margin-right:.4em}
+  .orn{display:block;margin:18px auto 20px}
+  h1{font-weight:900;font-size:88px;line-height:1.1;letter-spacing:-.01em;color:#f6ecd9;
+     text-shadow:0 2px 0 rgba(0,0,0,.25)}
+  .sub{margin-top:18px;font-weight:500;font-size:38px;color:var(--gold2);letter-spacing:.08em}
+  .sub .roman{font-family:'Cormorant Garamond';font-weight:600;font-size:44px;letter-spacing:.05em}
+  .date{margin:28px auto 0;display:inline-flex;align-items:center;gap:22px;
+     font-family:'Noto Serif KR';font-weight:600;font-size:27px;color:#f6ecd9;letter-spacing:.04em}
+  .date .dot{width:6px;height:6px;background:var(--gold);transform:rotate(45deg)}
+  .date .en{font-family:'Cormorant Garamond';font-size:32px;font-weight:600}
+
+  /* ---------- lectures ---------- */
+  .lectures{position:relative;padding:22px 70px 0}
+  .lec{display:grid;grid-template-columns:190px 1fr;gap:40px;align-items:center;padding:20px 0;
+       border-bottom:1px solid var(--rule)}
+  .lec:last-child{border-bottom:none}
+  .medal{width:190px;height:190px;border-radius:50%;position:relative;background:#f7f0e1;
+         box-shadow:0 0 0 2px var(--gold),0 0 0 7px var(--paper),0 0 0 8px var(--gold), 0 6px 18px rgba(60,35,20,.18)}
+  .medal svg{width:100%;height:100%}
+  .meta{display:flex;align-items:baseline;gap:18px;font-size:20px;color:var(--ink2)}
+  .num{font-family:'Cormorant Garamond';font-style:italic;font-weight:600;font-size:34px;color:var(--oxblood);letter-spacing:.02em}
+  .num small{font-family:'Noto Serif KR';font-style:normal;font-size:19px;font-weight:600;margin-left:6px;letter-spacing:.1em}
+  .meta .sep{width:1px;height:18px;background:var(--rule);align-self:center}
+  .meta .org{margin-left:auto;font-size:19px}
+  .ltitle{margin-top:10px;font-weight:700;font-size:35px;line-height:1.3;color:var(--ink);letter-spacing:-.01em}
+  .lsub{margin-top:4px;font-weight:500;font-size:23px;color:var(--oxblood);line-height:1.4}
+  .lsub .en{font-family:'Cormorant Garamond';font-style:italic;font-size:27px;font-weight:600}
+  .speaker{margin-top:14px;font-family:'Noto Sans KR';font-size:19px;color:var(--ink2)}
+  .speaker b{font-family:'Noto Serif KR';font-weight:700;font-size:22px;color:var(--ink);margin-right:8px}
+
+  /* ---------- info ---------- */
+  .info{margin:14px 70px 0;padding:28px 44px 26px;border:1px solid var(--rule);position:relative;background:rgba(255,251,242,.45)}
+  .info::before{content:"";position:absolute;inset:6px;border:1px solid rgba(185,162,124,.5);pointer-events:none}
+  .intro{font-size:19.5px;line-height:1.75;color:var(--ink2);text-align:center;word-break:keep-all}
+  .invite{margin:18px 0 20px;text-align:center;font-weight:700;font-size:30px;color:var(--oxblood);letter-spacing:.06em}
+  dl{display:grid;grid-template-columns:118px 1fr;row-gap:11px;font-family:'Noto Sans KR';font-size:19.5px;line-height:1.5}
+  dt{font-family:'Noto Serif KR';font-weight:700;color:var(--oxblood);letter-spacing:.15em}
+  dd{color:var(--ink)}
+  dd .muted{color:var(--ink2);font-size:17.5px}
+  dd b{font-weight:700}
+
+  footer{position:absolute;left:0;right:0;bottom:0;height:92px;background:var(--oxblood2);
+    display:flex;align-items:center;justify-content:center;gap:22px;color:#f3e7cf}
+  footer .name{font-weight:700;font-size:30px;letter-spacing:.08em}
+  footer .line{width:70px;height:1px;background:var(--gold)}
+</style>
+</head>
+<body>
+<div class="poster">
+
+<header>
+  <div class="inner-frame"></div>
+  <div class="eyebrow"><b>2026</b>한국정신분석심리상담협회 임상교육</div>
+  <svg class="orn" width="360" height="22" viewBox="0 0 360 22"><g fill="none" stroke="#b08d57" stroke-width="1.3">
+    <path d="M0 11H150"/><path d="M210 11H360"/><path d="M180 2 L189 11 L180 20 L171 11Z"/><path d="M162 11h-8M198 11h8"/>
+    <circle cx="160" cy="11" r="2" fill="#b08d57"/><circle cx="200" cy="11" r="2" fill="#b08d57"/></g></svg>
+  <h1>현대 사회<br>주체의 증상들</h1>
+  <div class="sub">— 정신분석적 접근 <span class="roman">II</span> —</div>
+  <div class="date"><span>2026년 11월 7일 토요일</span><span class="dot"></span><span>온라인 <span class="en">Zoom</span> 강의</span></div>
+</header>
+
+<section class="lectures">
+
+  <!-- Lecture I : the analytic couch & dream -->
+  <div class="lec">
+    <div class="medal"><svg viewBox="0 0 200 200">
+      <g fill="none" stroke="#3a2a21" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <!-- crescent & stars : dream -->
+        <path d="M142 32 A22 22 0 1 0 142 76 A17 17 0 1 1 142 32Z" fill="#b08d57" stroke="#8a6a3a" stroke-width="1.2"/>
+        <path d="M86 44l2 5 5 2-5 2-2 5-2-5-5-2 5-2z" fill="#b08d57" stroke="none"/>
+        <path d="M110 30l1.4 3.6 3.6 1.4-3.6 1.4-1.4 3.6-1.4-3.6-3.6-1.4 3.6-1.4z" fill="#b08d57" stroke="none"/>
+        <path d="M64 66l1.2 3 3 1.2-3 1.2-1.2 3-1.2-3-3-1.2 3-1.2z" fill="#b08d57" stroke="none"/>
+        <!-- dotted drift from pillow to moon -->
+        <path d="M58 96 C70 84 80 86 92 76 C104 66 112 70 120 62" stroke="#8a6a3a" stroke-width="1.4" stroke-dasharray="1 5"/>
+        <!-- couch -->
+        <path d="M30 144 V104 Q30 86 44 88 Q56 90 56 106 V122" fill="#6b2a24"/>
+        <rect x="30" y="122" width="142" height="22" rx="4" fill="#6b2a24"/>
+        <rect x="163" y="112" width="11" height="32" rx="3" fill="#6b2a24"/>
+        <ellipse cx="54" cy="113" rx="15" ry="8" transform="rotate(-22 54 113)" fill="#e9dcc2"/>
+        <path d="M62 122 C90 116 120 126 150 118 L156 138 C128 146 96 136 66 142Z" fill="#b08d57" stroke-width="1.5"/>
+        <path d="M78 125l2 12M96 124l2 13M114 125l2 12M132 122l2 12" stroke="#6b2a24" stroke-width="1.2"/>
+        <path d="M38 144v8q0 3 3 3M164 144v8q0 3-3 3"/>
+        <!-- rug -->
+        <rect x="18" y="158" width="164" height="10" fill="#8a6a3a" stroke="#3a2a21" stroke-width="1.4"/>
+        <path d="M22 168v5M30 168v5M38 168v5M46 168v5M54 168v5M62 168v5M70 168v5M78 168v5M86 168v5M94 168v5M102 168v5M110 168v5M118 168v5M126 168v5M134 168v5M142 168v5M150 168v5M158 168v5M166 168v5M174 168v5" stroke-width="1.2"/>
+      </g></svg></div>
+    <div>
+      <div class="meta"><span class="num">Lecture I<small>강의 1</small></span><span class="sep"></span><span>오전 10시 ~ 12시</span><span class="org">한국정신분석꿈해석연구회</span></div>
+      <div class="ltitle">대행하는 정신</div>
+      <div class="lsub">AI 시대 욕망, 꿈, 생각, 관계 능력의 위기</div>
+      <div class="speaker"><b>이창재</b>한국정신분석꿈해석연구회 대표 · 프로이트정신분석교육원 원장</div>
+    </div>
+  </div>
+
+  <!-- Lecture II : Freud's ego–id diagram opening into neurons -->
+  <div class="lec">
+    <div class="medal"><svg viewBox="0 0 200 200">
+      <g fill="none" stroke="#3a2a21" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M78 170 C46 158 36 120 40 90 C44 52 70 26 100 26 C130 26 156 52 160 90 C164 120 154 158 122 170"/>
+        <path d="M78 42 Q100 30 122 42" />
+        
+        <!-- super-ego band -->
+        <path d="M58 74 C50 96 50 118 58 140" stroke="#6b2a24" stroke-width="1.6"/>
+        <path d="M78 70 C70 96 70 118 78 144" stroke="#6b2a24" stroke-width="1.6"/>
+        <!-- repressed -->
+        <path d="M150 104 L126 118 M152 116 L128 130" stroke-width="1.4"/>
+        <path d="M100 94 C112 104 118 116 100 128 C82 116 88 104 100 94Z" stroke-width="1.1" stroke-dasharray="2 3" stroke="#8a6a3a"/>
+        <!-- neurons out of the open id -->
+        <path d="M100 150 V184 M100 170 L86 186 M100 170 L114 186 M86 186 l-6 6 M86 186 l2 8 M114 186 l6 6 M114 186 l-2 8 M100 184 l-4 8 M100 184 l4 8" stroke="#8a6a3a" stroke-width="1.5"/>
+        <circle cx="100" cy="150" r="4" fill="#b08d57" stroke="#8a6a3a" stroke-width="1.2"/>
+      </g>
+      <g font-family="Cormorant Garamond" font-style="italic" font-weight="600" fill="#3a2a21" text-anchor="middle">
+        <text x="100" y="56" font-size="11">W–Bw</text>
+        <text x="104" y="90" font-size="22">Ich</text>
+        <text x="100" y="152" font-size="0"></text>
+        <text x="100" y="146" font-size="21">Es</text>
+        <text x="68" y="108" font-size="11" transform="rotate(-90 68 108)" fill="#6b2a24">Über-Ich</text>
+        <text x="136" y="99" font-size="10" fill="#5a4a3e">verdrängt</text>
+        
+      </g></svg></div>
+    <div>
+      <div class="meta"><span class="num">Lecture II<small>강의 2</small></span><span class="sep"></span><span>오후 1시 30분 ~ 3시 30분</span><span class="org">(사)현대정신분석학회</span></div>
+      <div class="ltitle">신경정신분석 <span style="font-family:'Cormorant Garamond';font-style:italic;font-weight:600;font-size:30px;color:#5a4a3e">(Neuropsychoanalysis)</span>의 새로운 길</div>
+      <div class="lsub">충동, 예측부호화, 정신증을 중심으로</div>
+      <div class="speaker"><b>정경훈</b>정신분석전문가 · 한국정신분석심리상담협회 이사장</div>
+    </div>
+  </div>
+
+  <!-- Lecture III : the broken urn -->
+  <div class="lec">
+    <div class="medal"><svg viewBox="0 0 200 200">
+      <defs><clipPath id="vase"><path d="M84 38 L116 38 L114 44 C112 56 112 62 116 70 C140 80 150 112 140 145 C134 164 120 172 112 176 L112 182 L88 182 L88 176 C80 172 66 164 60 145 C50 112 60 80 84 70 C88 62 88 56 86 44 Z"/></clipPath></defs>
+      <g stroke="#3a2a21" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M84 38 L116 38 L114 44 C112 56 112 62 116 70 C140 80 150 112 140 145 C134 164 120 172 112 176 L112 182 L88 182 L88 176 C80 172 66 164 60 145 C50 112 60 80 84 70 C88 62 88 56 86 44 Z" fill="#6b2a24"/>
+        <g clip-path="url(#vase)" fill="none">
+          <rect x="40" y="98" width="120" height="16" fill="#1f1512" stroke="none"/>
+          <path d="M50 110 v-8 h8 v6 h-4 v-2 M62 110 v-8 h8 v6 h-4 v-2 M74 110 v-8 h8 v6 h-4 v-2 M86 110 v-8 h8 v6 h-4 v-2 M98 110 v-8 h8 v6 h-4 v-2 M110 110 v-8 h8 v6 h-4 v-2 M122 110 v-8 h8 v6 h-4 v-2 M134 110 v-8 h8 v6 h-4 v-2" stroke="#d6bb85" stroke-width="1.3"/>
+          <path d="M40 94 H160 M40 118 H160 M40 150 H160" stroke="#d6bb85" stroke-width="1.2"/>
+          <path d="M40 76 H160" stroke="#d6bb85" stroke-width="1.2"/>
+        </g>
+        <path d="M86 50 C70 50 66 64 78 74 M114 50 C130 50 134 64 122 74" fill="none"/>
+        <!-- hole -->
+        <path d="M128 80 L139 96 L131 112 L141 126 L124 124 L118 104Z" fill="#f7f0e1"/>
+        <!-- cracks -->
+        <path d="M118 104 L104 116 L110 132 L96 150 L102 166 M104 116 L88 122 M110 132 L122 142" fill="none" stroke-width="1.5"/>
+        <!-- fallen shard -->
+        <path d="M150 180 L160 166 L172 172 L178 186 Z" fill="#6b2a24"/>
+        <path d="M152 178 H176" stroke="#d6bb85" stroke-width="1.2"/>
+        <path d="M140 186 l4 -4 l3 4z M184 184 l3-3 l2 3z" fill="#6b2a24" stroke-width="1.2"/>
+        <path d="M30 188 H182" stroke="#8a6a3a" stroke-width="1.4"/>
+      </g></svg></div>
+    <div>
+      <div class="meta"><span class="num">Lecture III<small>강의 3</small></span><span class="sep"></span><span>오후 4시 ~ 6시</span><span class="org">(사)한국가족복지연구소</span></div>
+      <div class="ltitle">파괴된 내부 대상과 조적 방어</div>
+      <div class="lsub"><span class="en">Internal Ruined Object and Manic Defences</span></div>
+      <div class="speaker"><b>신정인</b>대상관계 심리상담가 · 수련감독자</div>
+    </div>
+  </div>
+</section>
+
+<section class="info">
+  <p class="intro">한국정신분석심리상담협회 두 번째 임상교육은 “현대 사회 주체의 증상들(정신분석적 접근 II)”이라는 주제를 가지고<br>세 곳 단체의 대표 강연자들께서 보석 같은 이론과 깊이 있는 해석을 들려 드릴 예정입니다.</p>
+  <div class="invite">한정심 임상교육에 초대합니다</div>
+  <dl>
+    <dt>일 시</dt><dd><b>2026년 11월 7일 토요일</b> · 온라인 Zoom 강의 <span class="muted">(11/14 ~ 11/15 동영상 재시청)</span></dd>
+    <dt>수강료</dt><dd>강의당 회원 <b>1만원</b> / 비회원 <b>2만원</b> <span class="muted">(강의 선택하여 신청)</span></dd>
+    <dt>신청방법</dt><dd>한정심 홈페이지(<b>kappp.co.kr</b>) – 특강 연수 신청 페이지 <span class="muted">(신청기간 : 10월 10일 ~ 11월 5일)</span></dd>
+    <dt>비회원</dt><dd>이름 / 소속 / 연락처 / 신청강의 1, 2, 3 선택을 작성하여 이메일(<b>admin@kappp.co.kr</b>)로 신청<br><span class="muted">※ 정/준회원의 경우에도 홈페이지를 통하지 않고 이메일로 신청 시 비회원 교육비 적용</span></dd>
+  </dl>
+</section>
+
+<footer><span class="line"></span><span class="name">한국정신분석심리상담협회 교육위원회</span><span class="line"></span></footer>
+</div>
+</body>
+</html>
